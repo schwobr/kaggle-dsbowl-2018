@@ -12,11 +12,11 @@ from fastai.callbacks import SaveModelCallback
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from .modules.dataset import CellsDataset, load_train_data
-from .modules.preds import predict_TTA_all, create_submission
-from .modules.metrics import mean_iou
-from .modules.utils import getNextFilePath
-import config as cfg
+from dsbowl.modules.dataset import CellsDataset, load_train_data
+from dsbowl.modules.preds import predict_TTA_all, create_submission
+from dsbowl.modules.metrics import mean_iou
+from dsbowl.modules.utils import getNextFilePath
+import dsbowl.config as cfg
 
 
 def run():

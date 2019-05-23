@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
-=======
-led / optimized / DLL files
->>>>>>> dl1/master
 __pycache__/
 *.py[cod]
 *$py.class
@@ -126,8 +122,11 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-#vscode
+# vscode
 .vscode/
 
-#all data
+# all data
 data/
+
+# ignore notebook
+*.ipynb

@@ -52,7 +52,7 @@ def run():
         loss_func=nn.BCEWithLogitsLoss(),
         wd=cfg.WD, model_dir=cfg.MODELS_PATH)
 
-    save_name = f'{models[cfg.MODEL]}_{cfg.EPOCHS}_'
+    save_name = f'{cfg.MODEL}_{cfg.EPOCHS}_'
     save_name += f'{cfg.LR}_{cfg.WD}_{getNextFilePath(cfg.MODELS_PATH)}'
 
     learner.fit_one_cycle(

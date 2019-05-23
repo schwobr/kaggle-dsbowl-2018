@@ -101,7 +101,8 @@ def predict_TTA(learner, img, size, rotations, device):
 
         out_rot = learner.model(rot).cpu().squeeze()
         out_rot = torch.sigmoid(out_rot).squeeze()
-        out_rot = TF.to_tensor(TF.rotate(TF.to_pil_image(out_rot), -angle))
+        out_rot = TF.rotate(TF.to_pil_image(out_rot), -angle)
+        out_rot = TF.to_tensor(out_rot).squeeze()
 
         out_flipped = learner.model(rot_flipped).cpu().squeeze()
         out_flipped = torch.sigmoid(out_flipped).squeeze()

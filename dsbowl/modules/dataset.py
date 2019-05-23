@@ -132,7 +132,7 @@ class CellsDataset(Dataset):
         return mask
 
 
-def load_train_data(path, height=256, width=256, bs=8, val_split=0.1,
+def load_train_data(path, height=256, width=256, bs=8, val_split=0.2,
                     erosion=True, normalize=None, crop=True,
                     grayscale=True, aug=True, shuffle=True):
     ids = next(os.walk(path))[1]

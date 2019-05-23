@@ -23,4 +23,4 @@ BATCH_SIZE = 4
 WD = 0.1
 LR = 2e-4
 EPOCHS = 100
-MODEL = "resnet34"
+MODEL = "resnet50"

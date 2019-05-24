@@ -297,7 +297,7 @@ def get_transforms(size=256, crop=True, resize=False, grayscale=True):
         px = transform(px)
         x.px = x
         return x
-    return Transform(transform_tens)
+    return [Transform(transform_tens), Transform(transform_tens)]
 
 
 def load_data(path, size=256, bs=8, val_split=0.2, resize=False,

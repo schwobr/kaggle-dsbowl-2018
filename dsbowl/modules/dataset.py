@@ -310,7 +310,7 @@ def load_data(path, size=256, bs=8, val_split=0.2, resize=False,
         split_by_rand_pct(valid_pct=val_split).
         label_from_func(
             lambda x: x.parents[1] / 'masks/', label_cls=MultiMasksList,
-            erosion=erosion).transform(
+            classes=['nucl'], erosion=erosion).transform(
             get_transforms(
                 size=size, crop=crop, resize=resize, grayscale=grayscale),
             tfm_y=True).databunch(

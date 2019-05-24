@@ -4,14 +4,14 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 import torch
-from torch.nn import BCEWithLogitsLoss
-from fastai.vision.data import ImageList, SegmentationProcessor
-from fastai.vision.image import open_image, Image
+from fastai.vision.data import SegmentationItemList, SegmentationLabelList
+from fastai.vision.image import open_image,  ImageSegment, Transform
 import cv2
 import PIL
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 
 class CellsDataset(Dataset):
@@ -278,20 +278,49 @@ def get_affine(degrees, scale_ranges, shears):
     return angle, scale, shear
 
 
-def load_data(path, height=256, width=256, bs=8, val_split=0.2,
+def get_transforms(size=256, crop=True, resize=False, grayscale=True):
+    tfms = [transforms.ToPILImage()]
+    if grayscale:
+        tfms.append(transforms.Grayscale(3))
+
+    if crop:
+        tfms.append(transforms.RandomCrop(size))
+
+    if resize:
+        tfms.append(transforms.Resize((size, size)))
+
+    tfms.append(transforms.ToTensor())
+    transform = transforms.Compose(tfms)
+
+    def transform_tens(x):
+        px = x.px
+        px = transform(px)
+        x.px = x
+        return x
+    return Transform(transform_tens)
+
+
+def load_data(path, size=256, bs=8, val_split=0.2, resize=False,
               erosion=True, normalize=None, crop=True,
-              grayscale=True, aug=True, shuffle=True):
-    train_list = (ImageList
-                  .from_folder(path, extensions=['.png'])
-                  .filter_by_func(lambda fn: 'images' in fn)
-                  .split_by_rand_pct())
-    return train_list.databunch()
+              grayscale=True, shuffle=True):
+    train_list = (
+        SegmentationItemList.
+        from_folder(path, extensions=['.png']).
+        filter_by_func(lambda fn: fn.parent == Path('/images')).
+        split_by_rand_pct(val_pct=val_split).
+        label_from_func(
+            lambda x: x.parents[1] / 'masks/', label_cls=MultiMasksList,
+            erosion=erosion).transform(
+            get_transforms(
+                size=size, crop=crop, resize=resize, grayscale=grayscale)).
+        databunch(bs=bs, num_workers=0, shuffle=shuffle))
+    return train_list
 
 
-class MultiMasksList(ImageList):
-    def __init__(self, items, **kwargs):
-        super().__init__(items, **kwargs)
-        self.c, self.loss_func = 1, BCEWithLogitsLoss()
+class MultiMasksList(SegmentationLabelList):
+    def __init__(self, erosion=True, **kwargs):
+        super.__init__(**kwargs)
+        self.erosion = erosion
 
     def open(self, fn):
         mask_files = next(os.walk(fn))[2]
@@ -299,9 +328,16 @@ class MultiMasksList(ImageList):
         for mask_file in mask_files:
             mask += open_image(os.path.join(fn, mask_file),
                                convert_mode='L').px
-        return Image(mask)
+        if self.erosion:
+            mask = torch.tensor(
+                cv2.erode(
+                    mask.numpy().astype(np.uint8),
+                    np.ones((3, 3),
+                            np.uint8),
+                    iterations=1)).float()
+        return ImageSegment(mask)
 
     def analyze_pred(self, pred, thresh: float = 0.5):
         return (pred > thresh).float()
 
-    def reconstruct(self, t): return Image(t)
+    def reconstruct(self, t): return ImageSegment(t)

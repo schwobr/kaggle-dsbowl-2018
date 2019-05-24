@@ -319,8 +319,8 @@ def load_data(path, size=256, bs=8, val_split=0.2, resize=False,
 
 
 class MultiMasksList(SegmentationLabelList):
-    def __init__(self, erosion=True, **kwargs):
-        super.__init__(**kwargs)
+    def __init__(self, *args, erosion=True, **kwargs):
+        super.__init__(*args, **kwargs)
         self.erosion = erosion
 
     def open(self, fn):

@@ -307,13 +307,14 @@ def load_data(path, size=256, bs=8, val_split=0.2, resize=False,
         SegmentationItemList.
         from_folder(path, extensions=['.png']).
         filter_by_func(lambda fn: fn.parent == Path('/images')).
-        split_by_rand_pct(val_pct=val_split).
+        split_by_rand_pct(valid_pct=val_split).
         label_from_func(
             lambda x: x.parents[1] / 'masks/', label_cls=MultiMasksList,
             erosion=erosion).transform(
             get_transforms(
-                size=size, crop=crop, resize=resize, grayscale=grayscale)).
-        databunch(bs=bs, num_workers=0, shuffle=shuffle))
+                size=size, crop=crop, resize=resize, grayscale=grayscale),
+            tfm_y=True).databunch(
+            bs=bs, num_workers=0, shuffle=shuffle))
     return train_list
 
 

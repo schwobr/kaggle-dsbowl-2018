@@ -311,10 +311,10 @@ class MultiMasksList(SegmentationLabelList):
         if self.erosion:
             mask = torch.tensor(
                 cv2.erode(
-                    mask.numpy().astype(np.uint8),
+                    mask.numpy().squeeze().astype(np.uint8),
                     np.ones((3, 3),
                             np.uint8),
-                    iterations=1)).float()
+                    iterations=1)).float().unsqueeze(0)
         return ImageSegment(mask)
 
     def analyze_pred(self, pred, thresh: float = 0.5):

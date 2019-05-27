@@ -317,7 +317,7 @@ class MultiMasksList(SegmentationLabelList):
                     np.ones((3, 3),
                             np.uint8),
                     iterations=1)).unsqueeze(0)
-        return ImageSegment(mask).float()
+        return ImageSegment(mask.float())
 
     def analyze_pred(self, pred, thresh: float = 0.5):
         return (pred > thresh).float()

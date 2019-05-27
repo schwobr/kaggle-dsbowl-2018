@@ -280,7 +280,7 @@ def get_affine(degrees, scale_ranges, shears):
 
 
 def load_data(path, size=256, bs=8, val_split=0.2,
-              erosion=True, normalize=True):
+              erosion=True, normalize=True, testset=None):
     train_list = (
         SegmentationItemList.
         from_folder(path, extensions=['.png'], convert_mode='L').
@@ -289,8 +289,10 @@ def load_data(path, size=256, bs=8, val_split=0.2,
         label_from_func(
             lambda x: x.parents[1] / 'masks/', label_cls=MultiMasksList,
             classes=['nucl'], erosion=erosion).transform(
-            (rand_pad(0, size), rand_pad(0, size)), tfm_y=True).databunch(
-            bs=bs, num_workers=0))
+            (rand_pad(0, size), rand_pad(0, size)), tfm_y=True))
+    if testset:
+        train_list.test = testset
+    train_list = train_list.databunch(bs=bs, num_workers=0)
     if normalize:
         train_list = train_list.normalize()
     return train_list

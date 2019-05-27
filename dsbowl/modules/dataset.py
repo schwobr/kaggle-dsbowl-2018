@@ -283,7 +283,7 @@ def load_data(path, size=256, bs=8, val_split=0.2,
               erosion=True, normalize=True, testset=None):
     train_list = (
         SegmentationItemList.
-        from_folder(path, extensions=['.png'], convert_mode='L').
+        from_folder(path, extensions=['.png']).
         filter_by_func(lambda fn: Path(fn).parent.name == 'images').
         split_by_rand_pct(valid_pct=val_split).
         label_from_func(

@@ -303,7 +303,8 @@ class MultiMasksList(SegmentationLabelList):
 
     def open(self, fn):
         mask_files = next(os.walk(fn))[2]
-        mask = open_image(os.path.join(fn, mask_files.pop(0))).px
+        mask = open_image(os.path.join(fn, mask_files.pop(0)),
+                          convert_mode='L').px
         for mask_file in mask_files:
             mask += open_image(os.path.join(fn, mask_file),
                                convert_mode='L').px

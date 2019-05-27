@@ -6,7 +6,7 @@ import torchvision.transforms.functional as TF
 import torch
 from fastai.vision.data import SegmentationItemList, SegmentationLabelList
 from fastai.vision.image import (open_image,  ImageSegment)
-import fastai.vision.transform as T
+from fastai.vision.transform import rand_pad
 import cv2
 import PIL
 import random
@@ -279,18 +279,8 @@ def get_affine(degrees, scale_ranges, shears):
     return angle, scale, shear
 
 
-def get_transforms(size=256, crop=True, resize=False):
-    tfms = []
-    if crop:
-        tfms.append(T.rand_pad(0, size))
-    if resize:
-        tfms.append(T.resize((size, size)))
-    return (tfms, tfms)
-
-
-def load_data(path, size=256, bs=8, val_split=0.2, resize=False,
-              erosion=True, normalize=None, crop=True,
-              grayscale=True, shuffle=True):
+def load_data(path, size=256, bs=8, val_split=0.2,
+              erosion=True, normalize=True, shuffle=True):
     train_list = (
         SegmentationItemList.
         from_folder(path, extensions=['.png']).
@@ -299,9 +289,10 @@ def load_data(path, size=256, bs=8, val_split=0.2, resize=False,
         label_from_func(
             lambda x: x.parents[1] / 'masks/', label_cls=MultiMasksList,
             classes=['nucl'], erosion=erosion).transform(
-            get_transforms(size=size, crop=crop, resize=resize),
-            tfm_y=True).databunch(
+            (rand_pad(0, size), rand_pad(0, size)), tfm_y=True).databunch(
             bs=bs, num_workers=0, shuffle=shuffle))
+    if normalize:
+        train_list = train_list.normalize()
     return train_list
 
 

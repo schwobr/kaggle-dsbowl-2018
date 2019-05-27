@@ -5,7 +5,7 @@ from torchvision import transforms
 import torchvision.transforms.functional as TF
 import torch
 from fastai.vision.data import SegmentationItemList, SegmentationLabelList
-from fastai.vision.image import (open_image,  ImageSegment)
+from fastai.vision.image import (open_image,  Image)
 from fastai.vision.transform import rand_pad
 import cv2
 import PIL
@@ -317,9 +317,9 @@ class MultiMasksList(SegmentationLabelList):
                     np.ones((3, 3),
                             np.uint8),
                     iterations=1)).unsqueeze(0)
-        return ImageSegment(mask.float())
+        return Image(mask.float())
 
     def analyze_pred(self, pred, thresh: float = 0.5):
         return (pred > thresh).float()
 
-    def reconstruct(self, t): return ImageSegment(t)
+    def reconstruct(self, t): return Image(t)

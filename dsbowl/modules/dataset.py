@@ -5,7 +5,8 @@ from torchvision import transforms
 import torchvision.transforms.functional as TF
 import torch
 from fastai.vision.data import SegmentationItemList, SegmentationLabelList
-from fastai.vision.image import open_image,  ImageSegment, Transform
+from fastai.vision.image import (open_image,  ImageSegment)
+import fastai.vision.transform as T
 import cv2
 import PIL
 import random
@@ -278,26 +279,13 @@ def get_affine(degrees, scale_ranges, shears):
     return angle, scale, shear
 
 
-def get_transforms(size=256, crop=True, resize=False, grayscale=True):
-    tfms = [transforms.ToPILImage()]
-    if grayscale:
-        tfms.append(transforms.Grayscale(3))
-
+def get_transforms(size=256, crop=True, resize=False):
+    tfms = []
     if crop:
-        tfms.append(transforms.RandomCrop(size))
-
+        tfms.append(T.rand_pad(0, size))
     if resize:
-        tfms.append(transforms.Resize((size, size)))
-
-    tfms.append(transforms.ToTensor())
-    transform = transforms.Compose(tfms)
-
-    def transform_tens(x):
-        px = x.px
-        px = transform(px)
-        x.px = x
-        return x
-    return [Transform(transform_tens), Transform(transform_tens)]
+        tfms.append(T.resize((size, size)))
+    return tfms
 
 
 def load_data(path, size=256, bs=8, val_split=0.2, resize=False,
@@ -311,8 +299,7 @@ def load_data(path, size=256, bs=8, val_split=0.2, resize=False,
         label_from_func(
             lambda x: x.parents[1] / 'masks/', label_cls=MultiMasksList,
             classes=['nucl'], erosion=erosion).transform(
-            get_transforms(
-                size=size, crop=crop, resize=resize, grayscale=grayscale),
+            get_transforms(size=size, crop=crop, resize=resize),
             tfm_y=True).databunch(
             bs=bs, num_workers=0, shuffle=shuffle))
     return train_list

@@ -285,7 +285,7 @@ def get_transforms(size=256, crop=True, resize=False):
         tfms.append(T.rand_pad(0, size))
     if resize:
         tfms.append(T.resize((size, size)))
-    return tfms
+    return [tfms, tfms]
 
 
 def load_data(path, size=256, bs=8, val_split=0.2, resize=False,

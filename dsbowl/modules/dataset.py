@@ -65,7 +65,7 @@ class CellsDataset(Dataset):
                 img.shape[2]
             except IndexError:
                 img = np.expand_dims(img, axis=2)
-                img = np.concatenate((img, img, img), axis=2)
+                img = np.concatenate((img, img, img), axis=2).astype(np.uint8)
             sizes.append(torch.tensor(img.shape).unsqueeze(0))
             img = PIL.Image.fromarray(img)
 

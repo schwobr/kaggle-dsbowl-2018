@@ -60,7 +60,7 @@ class CellsDataset(Dataset):
             else:
                 img_path = os.path.join(self.path, i, 'images', f'{i}.png')
                 mask_path = os.path.join(self.path, i, 'masks')
-            img = imread(img_path)
+            img = imread(img_path)[:3]
             sizes.append(torch.tensor(img.shape).unsqueeze(0))
             img = PIL.Image.fromarray(img)
 

@@ -30,7 +30,7 @@ def run(model):
     testset = CellsDataset(
         cfg.TEST_PATH, test_ids, height=cfg.MAX_HEIGHT, width=cfg.MAX_WIDTH,
         train=False, erosion=True, crop=False, resize=False, aug=False,
-        pad=True, normalize=(cfg.MEAN, cfg.STD))
+        pad=True)
 
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     db = load_data(cfg.TRAIN_PATH, size=cfg.TRAIN_WIDTH,

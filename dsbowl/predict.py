@@ -42,7 +42,7 @@ learner = unet_learner(
     wd=cfg.WD, model_dir=cfg.MODELS_PATH)
 
 save_name = f'{cfg.MODEL}_{cfg.EPOCHS}_'
-save_name += f'{cfg.LR}_{cfg.WD}_{getNextFilePath(cfg.MODELS_PATH)-1}'
+save_name += f'{cfg.LR}_{cfg.WD}_{getNextFilePath(cfg.MODELS_PATH)}'
 
 learner.load(save_name)
 

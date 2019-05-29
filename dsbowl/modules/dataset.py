@@ -285,7 +285,7 @@ def get_affine(degrees, scale_ranges, shears):
 
 
 def load_data(path, size=256, bs=8, val_split=0.2,
-              erosion=True, normalize=True, testset=None):
+              erosion=True, normalize=False, testset=None):
     train_list = (
         SegmentationItemList.
         from_folder(path, extensions=['.png']).

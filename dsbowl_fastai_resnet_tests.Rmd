@@ -1,0 +1,554 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.1'
+      jupytext_version: 1.1.3
+  kernelspec:
+    display_name: Python [conda env:pytorch] *
+    language: python
+    name: conda-env-pytorch-py
+---
+
+```{python}
+import os
+import sys
+import random
+import warnings
+import time
+import copy
+from math import ceil
+
+import numpy as np
+import pandas as pd
+import cv2
+import PIL
+
+from dsbowl.modules.dataset import *
+from dsbowl.modules.preds import *
+
+import matplotlib.pyplot as plt
+
+from tqdm import tqdm_notebook, tqdm
+from itertools import chain
+from skimage.io import imread, imshow, imread_collection, concatenate_images
+from skimage.transform import resize
+from skimage.morphology import label
+
+import fastai.vision as v
+from fastai.vision.data import ImageDataBunch, normalize
+from fastai.vision.learner import unet_learner
+import fastai.vision.models as mod
+from fastai.callbacks import SaveModelCallback
+from fastai.basic_data import DatasetType
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms, utils
+import torchvision.transforms.functional as TF
+
+IMG_WIDTH = 256
+IMG_HEIGHT = 256
+IMG_CHANNELS = 3
+PROJECT_PATH = '/work/stages/schwob/data-science-bowl-2018/kaggle-dsbowl-2018/'
+TRAIN_PATH = 'data/stage1_train/'
+TEST_PATH = 'data/stage2_test_final/'
+MODELS = PROJECT_PATH+'models/'
+BATCH_SIZE = 4
+MEAN = 0.5
+STD = 0.5
+
+
+warnings.filterwarnings('ignore', category=UserWarning, module='skimage')
+seed = 42
+random.seed = seed
+np.random.seed = seed
+```
+
+```{python}
+# Get train and test IDs
+train_ids = next(os.walk(TRAIN_PATH))[1]
+test_ids = next(os.walk(TEST_PATH))[1]
+```
+
+```{python}
+def mean_iou(y_pred, y_true, smooth = 1e-6):
+    scores = np.zeros(y_true.shape[0])
+    y_true = y_true.squeeze(1)
+    y_pred = torch.sigmoid(y_pred).squeeze(1)
+    for i in range(y_true.shape[0]):
+        labels_pred = label(y_pred.to('cpu').numpy()[i] > 0.5)
+        labels_true = label(y_true.to('cpu').numpy()[i])
+        score = 0
+        cnt = 0
+        n_masks_pred = np.max(labels_pred)
+        n_masks_true = np.max(labels_true)
+        inter_union = np.zeros((n_masks_pred, n_masks_true, 2), dtype = np.int)
+        for k in range(y_true.shape[1]):
+            for l in range(y_true.shape[2]):
+                m = labels_pred[k, l]
+                n = labels_true[k, l]
+                if m!=0:
+                    inter_union[m-1, :, 1] += 1
+                if n!=0:
+                    inter_union[:, n-1, 1] += 1
+                if m!=0 and n!=0:
+                    inter_union[m-1, n-1, 0] += 1
+        ious = inter_union[:, :, 0]/(inter_union[:, :, 1]-inter_union[:, :, 0]+smooth)
+        for t in np.arange(0.5, 1.0, 0.05):
+            cnt += 1
+            tp = 0
+            fp = 0
+            fn = 0
+            fn_tests = np.ones(n_masks_true, dtype=np.bool)
+            for m in range(n_masks_pred):
+                fp_test = True
+                for n in range(n_masks_true):
+                    if ious[m, n]>t:
+                        tp += 1 
+                        fp_test = False
+                        fn_tests[n] = False
+                if fp_test:
+                    fp += 1
+            fn = np.count_nonzero(fn_tests)  
+            try:
+                score += tp/(tp+fp+fn)
+            except:
+                pass
+        score = score/cnt
+        scores[i] = score
+    return torch.tensor(scores).mean()
+
+def iou_scoring(net, ds, y):
+    predicted = net.predict(ds)
+    return mean_iou(y, predicted)
+```
+
+```{python}
+def rle_encoding(x):
+    dots = np.where(x.T.flatten() == 1)[0]
+    run_lengths = []
+    prev = -2
+    for b in dots:
+        if (b>prev+1): 
+            run_lengths.extend((b + 1, 0))
+        run_lengths[-1] += 1
+        prev = b
+    return run_lengths
+    
+def to_rles(x):
+    n = np.max(x)
+    for i in range(1, n + 1):
+        yield rle_encoding(x == i)
+        
+def prob_to_rles(x, cutoff=0.5):
+    lab_img = label(x > cutoff)
+    mask = np.zeros_like(lab_img)
+    for i in range(1, lab_img.max() + 1):
+        img = ((lab_img == i).astype(np.uint8) * 255)
+        img = cv2.dilate(img,np.ones((3, 3), np.uint8),iterations = 1).astype('float32')/255
+        mask[img>cutoff] = i
+    for i in range(1, mask.max() + 1):
+        yield rle_encoding(mask==i)
+```
+
+```{python}
+def getNextFilePath(output_folder):
+    highest_num = 0
+    for f in os.listdir(output_folder):
+        if os.path.isfile(os.path.join(output_folder, f)):
+            file_name = os.path.splitext(f)[0]
+            try:
+                split = file_name.split('.')
+                split = split[0].split('_')
+                file_num = int(split[-1])
+                if file_num > highest_num:
+                    highest_num = file_num
+            except ValueError:
+                'The file name "%s" is not an integer. Skipping' % file_name
+
+    output_file = highest_num + 1
+    return output_file
+```
+
+```{python}
+def create_submission(preds, sizes, test_ids, resize=False):
+    if resize:
+        preds_test_upsampled = []
+        for i, pred in enumerate(preds):
+            preds_test_upsampled.append(resize(pred, (sizes[i, 0], sizes[i, 1]), 
+                                            mode='constant', preserve_range=True))
+    else:
+        preds_test_upsampled = preds
+    new_test_ids = []
+    rles = []
+    for n, id_ in enumerate(tqdm_notebook(test_ids)):
+        rle = list(prob_to_rles(preds_test_upsampled[n]))
+        rles.extend(rle)
+        if rle==[]:
+            rles.append([])
+        new_test_ids.extend([id_] * max(1, len(rle)))
+
+    sub = pd.DataFrame()
+    sub['ImageId'] = new_test_ids
+    sub['EncodedPixels'] = pd.Series(rles).apply(lambda x: ' '.join(str(y) for y in x))
+    
+    sub_path='./submissions'
+    sub_file = os.path.join(sub_path, f'sub_dsbowl_pt_{getNextFilePath(sub_path)}.csv')
+    sub.to_csv(sub_file, index=False)
+```
+
+```{python}
+#trainloader, valloader = load_train_data(TRAIN_PATH, normalize=((MEAN, MEAN, MEAN), (STD, STD, STD)))
+testset = CellsDataset(TEST_PATH, test_ids, height=1388, width=1388, train=False, erosion=True, crop=False, resize=False, 
+                       aug=False, pad=True)
+testloader = DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+```
+
+```{python}
+db = ImageDataBunch(trainloader, valloader, test_dl=testloader, device='cuda:0')
+```
+
+```{python}
+learner = unet_learner(db, mod.resnet34, pretrained=False, metrics=[mean_iou], loss_func=nn.BCEWithLogitsLoss())
+```
+
+```{python}
+tot = 0
+for param in learner.model.parameters():
+    tot += torch.prod(torch.tensor(param.shape)).item()
+print(tot)
+```
+
+```{python}
+#learner.recorder.plot()
+```
+
+```{python}
+learner.fit_one_cycle(50, 2e-4, callbacks=[SaveModelCallback(learner, monitor='mean_iou', name='bestmodel2')])
+```
+
+```{python}
+learner = unet_learner(db, mod.resnet34, pretrained=False, metrics=[mean_iou], loss_func=nn.BCEWithLogitsLoss())
+learner = learner.load('resnet34_100_0.0002_0.1_1.pth')
+```
+
+```{python}
+preds = []
+sizes = []
+with torch.no_grad():
+    for X_test, sizes_test in tqdm_notebook(testloader):
+        sizes.append(sizes_test)
+        preds.append(torch.sigmoid(learner.model(X_test.to('cuda:0')).to('cpu')))
+sizes = torch.cat(sizes).numpy().squeeze()
+preds = torch.cat(preds)
+preds = preds.squeeze().numpy()
+```
+
+```{python}
+create_submission(preds, sizes, test_ids)
+```
+
+```{python}
+def iou(pred_mask, gt_mask):
+    inter = 0 
+    union = 0
+    for i in range(0, len(pred_mask), 2):
+        union += pred_mask[i+1]
+        for j in range(0, len(gt_mask), 2):
+            inter += max(0, min(pred_mask[i]+pred_mask[i+1]-1, gt_mask[j]+gt_mask[j+1]-1)-max(pred_mask[i], gt_mask[j])+1)
+            if i == 0:
+                union += gt_mask[j+1]
+    union -= inter
+    try:
+        return float(inter)/float(union)
+    except:
+        return 0
+
+def mean_iou2(gt, pred):
+    ids = gt['ImageId'].unique()
+    scores = np.zeros(ids.shape[0])
+    for n, i in enumerate(ids):
+        score = 0
+        cnt = 0
+        gt_masks = [[int(p) for p in row.EncodedPixels.split(' ') if p!=''] for row in gt.itertuples() if row.ImageId==i]
+        pred_masks = [[int(p) for p in row.EncodedPixels.split(' ') if p!=''] for row in preds.itertuples() if row.ImageId==i]
+        ious = np.zeros((len(pred_masks), len(gt_masks)))         
+        for j in range(len(pred_masks)):
+            for k in range(len(gt_masks)):
+                ious[j, k] = iou(pred_masks[j], gt_masks[k])
+        for t in np.arange(0.5, 1.0, 0.05):
+            cnt += 1
+            tp = 0
+            fp = 0
+            fn = 0
+            fn_tests = np.ones(len(gt_masks), dtype=np.bool)
+            for j, pred_mask in enumerate(pred_masks):
+                fp_test = True
+                for k, gt_mask in enumerate(gt_masks):
+                    if ious[j, k]>t:
+                        tp += 1 
+                        fp_test = False
+                        fn_tests[k] = False
+                if fp_test:
+                    fp += 1
+            fn = np.count_nonzero(fn_tests)  
+            try:
+                score += float(tp)/float(tp+fp+fn)
+            except:
+                pass
+        score = score/float(cnt)
+        scores[n] = score
+    return np.mean(scores)
+```
+
+```{python}
+preds = pd.read_csv('./submissions/sub_dsbowl_pt_14.csv')
+gt = pd.read_csv('./stage1_solution.csv')
+```
+
+```{python}
+mean_iou2(gt, preds)
+```
+
+```{python}
+def predict_TTA_all(learner, size=(512,512), overlap=64, rotations=(0,90,180,270)):
+    preds = []
+    sizes = []
+    with torch.no_grad():
+        for X_test, sizes_test in tqdm_notebook(learner.dl(DatasetType.Test)):
+            sizes.append(sizes_test)
+            for tens, s in zip(X_test, sizes_test.squeeze()):
+                crops, pos, overlaps = get_crops(tens.cpu()[:, :s[0],:s[1]], size, overlap)
+                pred = torch.zeros((s[0], s[1]))
+                for crop, ((x_min, y_min), (x_max, y_max)) in zip(crops, pos):
+                    img = TF.to_pil_image(crop)
+                    res = predict_TTA(learner, img, size, rotations)
+                    pred[x_min:x_max, y_min:y_max] += res[:x_max-x_min,:y_max-y_min]/overlaps[:x_max-x_min,:y_max-y_min]
+                preds.append(pred.numpy())
+    sizes = torch.cat(sizes).cpu().numpy().squeeze()
+    return preds, sizes      
+
+def get_crops(img, size, overlap):
+    n, h, w = img.size()
+    n_h = ceil((h+overlap/2-1)/(size[0]-overlap))
+    n_w = ceil((w+overlap/2-1)/(size[1]-overlap))
+    crops = []
+    pos = []
+    overlaps = torch.zeros((h, w))
+    for i in range(n_h):
+        for j in range(n_w):
+            crop = torch.zeros((n, size[0], size[1]))
+            x_min = i*(size[0]-overlap)
+            y_min = j*(size[1]-overlap)
+            x_max = min(h, (i+1)*size[0]-i*overlap)
+            y_max = min(w, (j+1)*size[1]-j*overlap)
+            crop[:, :x_max-x_min, :y_max-y_min] = img[:, x_min:x_max, y_min:y_max]
+            crops.append(crop)
+            overlaps[x_min:x_max, y_min:y_max] += 1
+            pos.append(((x_min, y_min),(x_max, y_max)))
+    return crops, pos, overlaps
+
+def predict_TTA(learner, img, size, rotations):
+    flipped = TF.hflip(img)
+    res = torch.zeros(size)
+    for angle in rotations:    
+        rot = TF.rotate(img, angle)  
+        rot_flipped = TF.rotate(flipped, angle)
+        out_rot = learner.model(TF.to_tensor(rot).unsqueeze(0).cuda()).cpu().squeeze()
+        out_rot = torch.sigmoid(out_rot)
+        out_rot = TF.to_tensor(TF.rotate(TF.to_pil_image(out_rot.squeeze()), -angle)).squeeze()
+        out_flipped = learner.model(TF.to_tensor(rot_flipped).unsqueeze(0).cuda()).cpu().squeeze()
+        out_flipped = torch.sigmoid(out_flipped)
+        out_flipped = TF.hflip(TF.rotate(TF.to_pil_image(out_flipped.squeeze()), -angle))
+        out_flipped = TF.to_tensor(out_flipped).squeeze()
+        res += (out_rot+out_flipped)/2
+    res /= len(rotations)
+    return res 
+```
+
+```{python}
+preds, sizes = predict_TTA_all(learner)
+```
+
+```{python}
+imshow(np.asarray(TF.to_pil_image(testset[0][0])))
+```
+
+```{python}
+learner.model.modules
+```
+
+```{python}
+print(len(train_ids))
+```
+
+```{python}
+h_max = 0
+w_max = 0
+for i in range(len(test_ids)):
+    img, _ = testset[i]
+    if img.size(0)>h_max:
+        h_max = img.size(1)
+    if img.size(1)>w_max:
+        w_max = img.size(2)
+print(h_max, w_max)
+```
+
+```{python}
+from fastai.vision.data import ImageList, ImageSegment, SegmentationProcessor
+from fastai.vision.image import open_image, Image
+
+class MultiMasksLabelList(ImageList):
+    _processor = SegmentationProcessor
+
+    def __init__(self, items, size=(256, 256), **kwargs):
+        super().__init__(items, **kwargs)
+        self.c, self.loss_func = 1, None
+        self.size = size
+
+    def open(self, fn):
+        mask = torch.zeros(self.size).unsqueeze(0)
+        for mask_file in next(os.walk(fn))[2]:
+            mask += open_image(os.path.join(fn, mask_file),
+                               convert_mode='L').px
+        return Image(mask)
+
+    def analyze_pred(
+        self, pred, thresh: float = 0.5): return pred.argmax(
+        dim=0)[None]
+
+    def reconstruct(self, t): return ImageSegment(t)
+
+```
+
+```{python}
+a = torch.empty(None)
+```
+
+```{python}
+a > 0
+```
+
+```{python}
+testset = CellsDataset(TEST_PATH, test_ids, height=1388, width=1388, train=False, erosion=True, crop=False, resize=False, 
+                       aug=False, pad=True)
+testloader = DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+train_list = load_data(TRAIN_PATH, testset=testset)
+```
+
+```{python}
+learner = unet_learner(train_list, mod.resnet34, pretrained=False, metrics=[mean_iou], loss_func=nn.BCEWithLogitsLoss(), model_dir=MODELS)
+learner = learner.load('resnet34_500_0.0002_0.1_1')
+```
+
+```{python}
+def predict_TTA_all(learner, size=(512, 512), overlap=64,
+                    rotations=(0, 90, 180, 270), device='cuda:0'):
+    preds = []
+    sizes = []
+    with torch.no_grad():
+        for X_test, sizes_test in tqdm_notebook(learner.dl(DatasetType.Test)):
+            sizes.append(sizes_test)
+            for tens, s in zip(X_test, sizes_test):
+                crops, pos, overlaps = get_crops(tens.cpu()[:, :s[0], :s[1]],
+                                                 size, overlap)
+                pred = torch.zeros((s[0], s[1]))
+                for crop, ((x_min, y_min), (x_max, y_max)) in zip(crops, pos):
+                    img = TF.to_pil_image(crop)
+                    res = predict_TTA(learner, img, size, rotations, device)
+                    pred[x_min:x_max, y_min:y_max] += res[
+                        :x_max-x_min, :y_max-y_min]
+                pred/=overlaps
+                #imshow(pred.numpy()>0.5)
+                #plt.show()
+                preds.append(pred.numpy())
+    sizes = torch.cat(sizes).cpu().numpy().squeeze()
+    return preds, sizes
+
+
+def get_crops(img, size, overlap):
+    n, h, w = img.size()
+    n_h = ceil((h+overlap/2-1)/(size[0]-overlap))
+    n_w = ceil((w+overlap/2-1)/(size[1]-overlap))
+    crops = []
+    pos = []
+    overlaps = torch.zeros((h, w))
+    for i in range(n_h):
+        for j in range(n_w):
+            crop = torch.zeros((n, size[0], size[1]))
+            x_min = i*(size[0]-overlap)
+            y_min = j*(size[1]-overlap)
+            x_max = min(h, (i+1)*size[0]-i*overlap)
+            y_max = min(w, (j+1)*size[1]-j*overlap)
+            crop[:, :x_max-x_min, :y_max-y_min] = img[:, x_min:x_max,
+                                                      y_min:y_max]
+            crops.append(crop)
+            overlaps[x_min:x_max, y_min:y_max] += 1
+            pos.append(((x_min, y_min), (x_max, y_max)))
+    return crops, pos, overlaps
+
+
+def predict_TTA(learner, img, size, rotations, device):
+    flipped = TF.hflip(img)
+    res = torch.zeros(size)
+    for angle in rotations:
+        rot = TF.rotate(img, angle)
+        rot = TF.to_tensor(rot).unsqueeze(0).to(device)
+        rot_flipped = TF.rotate(flipped, angle)
+        rot_flipped = TF.to_tensor(rot_flipped).unsqueeze(0).to(device)
+
+        out_rot = learner.model(rot).cpu().squeeze()
+        out_rot = torch.sigmoid(out_rot).squeeze()
+        out_rot = TF.rotate(TF.to_pil_image(out_rot), -angle)
+        out_rot = TF.to_tensor(out_rot).squeeze()
+
+        out_flipped = learner.model(rot_flipped).cpu().squeeze()
+        out_flipped = torch.sigmoid(out_flipped).squeeze()
+        out_flipped = TF.hflip(TF.rotate(TF.to_pil_image(out_flipped), -angle))
+        out_flipped = TF.to_tensor(out_flipped).squeeze()
+
+        res += (out_rot+out_flipped)/2
+    res /= len(rotations)
+    return res
+preds, sizes = predict_TTA_all(learner)
+```
+
+```{python}
+imshow(preds[0]>0.5)
+```
+
+```{python}
+ids = test_ids
+l=[]
+for i in tqdm_notebook(ids):
+    img_path = os.path.join(TEST_PATH, i, 'images', f'{i}.png')
+    mask_path = os.path.join(TEST_PATH, i, 'masks')
+    img = imread(img_path)
+    try:
+        img.shape[2]
+    except IndexError:
+        img = np.expand_dims(img, axis=2)
+        img = np.concatenate((img, img, img), axis=2).astype(np.uint8)
+    try:
+        img = PIL.Image.fromarray(img)
+    except:
+        print(img.dtype)
+```
+
+```{python}
+mean, std=train_list.batch_stats()
+```
+
+```{python}
+create_submission(preds, sizes, test_ids)
+```
+
+```{python}
+
+```

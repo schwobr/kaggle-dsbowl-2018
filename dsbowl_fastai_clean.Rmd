@@ -1,0 +1,352 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.1'
+      jupytext_version: 1.1.3
+  kernelspec:
+    display_name: Python [conda env:pytorch] *
+    language: python
+    name: conda-env-pytorch-py
+---
+
+# FastAI integration for Data Science Bowl 2018
+
+This notebook presents my work to try and use the fastai library to tackle the data science bowl 2018 kaggle competition. 
+
+```{python}
+import os
+import sys
+import random
+import warnings
+import time
+import copy
+
+from math import ceil
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import cv2
+import PIL
+
+import matplotlib.pyplot as plt
+
+from tqdm import tqdm_notebook as tqdm
+from itertools import chain
+from skimage.io import imread, imshow, imread_collection, concatenate_images
+from skimage.transform import resize
+from skimage.morphology import label
+
+import fastai.vision as v
+from fastai.vision.data import SegmentationItemList, SegmentationLabelList
+from fastai.vision.image import open_image, Image
+from fastai.vision.transform import rand_pad
+from fastai.vision.learner import unet_learner
+import fastai.vision.models as mod
+from fastai.callbacks import SaveModelCallback
+from fastai.basic_data import DatasetType
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms, utils
+import torchvision.transforms.functional as TF
+
+# IMAGE SIZES
+TRAIN_WIDTH = 256
+TRAIN_HEIGHT = 256
+MAX_WIDTH = 1388
+MAX_HEIGHT = 1388
+TEST_HEIGHT = 256
+TEST_WIDTH = 256
+TEST_OVERLAP = 64
+IMG_CHANNELS = 3
+
+# PATHS
+PROJECT_PATH = '/work/stages/schwob/data-science-bowl-2018/kaggle-dsbowl-2018/'
+TRAIN_PATH = PROJECT_PATH+'data/stage1_train/'
+TEST_PATH = PROJECT_PATH+'data/stage2_test_final/'
+MODELS_PATH = PROJECT_PATH+'models/'
+SUB_PATH = PROJECT_PATH+'submissions/'
+
+# NORMALIZE
+MEAN = (0.5, 0.5, 0.5)
+STD = (0.5, 0.5, 0.5)
+
+# LEARNER CONFIG
+BATCH_SIZE = 4
+WD = 0.1
+LR = 2e-4
+EPOCHS = 10
+MODEL = "resnet34"
+
+
+warnings.filterwarnings('ignore', category=UserWarning, module='skimage')
+seed = 42
+random.seed = seed
+np.random.seed = seed
+```
+
+We define the models we want to be able to use.
+
+```{python}
+models = {'resnet34': mod.resnet34, 'resnet50': mod.resnet50, 'resnet101': mod.resnet101}
+```
+
+## Loading data
+
+We first need to create a custom `SegmentationLabelList` for our masks as they are stored in multiple files. To do so, we mainly need to override the `open` function to create the full mask from the multiple images. The path that is stored in the list will therefore be the path to the folder containing all the masks. I also added the `erosion` variable that determines if we erode the masks to make all nuclei borders have a clear separation.
+
+```{python}
+class MultiMasksList(SegmentationLabelList):
+    def __init__(self, *args, erosion=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.erosion = erosion
+
+    def open(self, fn):
+        mask_files = next(os.walk(fn))[2]
+        mask = open_image(os.path.join(fn, mask_files.pop(0)),
+                          convert_mode='L').px
+        for mask_file in mask_files:
+            mask += open_image(os.path.join(fn, mask_file),
+                               convert_mode='L').px
+        if self.erosion:
+            mask = torch.tensor(
+                cv2.erode(
+                    mask.numpy().squeeze().astype(np.uint8),
+                    np.ones((3, 3),
+                            np.uint8),
+                    iterations=1)).unsqueeze(0)
+        return Image(mask.float())
+
+    def analyze_pred(self, pred, thresh: float = 0.5):
+        return (pred > thresh).float()
+
+    def reconstruct(self, t): return Image(t)
+```
+
+After that, we can directly load the data from the training folder. We get all the png images and only keep those that are in an `images` folder. We randomly crop the images to make them all have the same size , and normalize them to [-1,1] range (it got me better result for some reason).
+
+```{python}
+def load_data(path, size=256, bs=8, val_split=0.2,
+              erosion=True, normalize=None, testset=None):
+    train_list = (
+        SegmentationItemList.
+        from_folder(path, extensions=['.png']).
+        filter_by_func(lambda fn: Path(fn).parent.name == 'images').
+        split_by_rand_pct(valid_pct=val_split).
+        label_from_func(
+            lambda x: x.parents[1] / 'masks/', label_cls=MultiMasksList,
+            classes=['nucl'], erosion=erosion).transform(
+            (rand_pad(0, size), rand_pad(0, size)), tfm_y=True))
+    if testset:
+        train_list.test = testset
+    train_list = train_list.databunch(bs=bs, num_workers=0)
+    if normalize:
+        train_list = train_list.normalize(
+            [torch.tensor(normalize[0]),
+             torch.tensor(normalize[1])])
+    return train_list
+```
+
+```{python}
+db = load_data(TRAIN_PATH, bs=BATCH_SIZE, normalize=(MEAN, STD))
+```
+
+## Augment data
+I did some data augmentation that I directly stored in disk using the follow function. It basically randomly changes HUE, brightness and contrast of the image, additionnaly to flipping it with probability 0.5 and applying a random affine transform. It is not necessary to use for starters but it helps improving the score.
+
+```{python}
+def get_affine(degrees, scale_ranges, shears):
+    angle = random.uniform(degrees[0], degrees[1])
+
+    if scale_ranges is not None:
+        scale = random.uniform(scale_ranges[0], scale_ranges[1])
+    else:
+        scale = 1.0
+
+    if shears is not None:
+        shear = random.uniform(shears[0], shears[1])
+    else:
+        shear = 0.0
+
+    return angle, scale, shear
+
+def getNextId(output_folder):
+    highest_num = -1
+    for d in os.listdir(output_folder):
+        dir_name = os.path.splitext(d)[0]
+        try:
+            i = int(dir_name)
+            if i > highest_num:
+                highest_num = i
+        except ValueError:
+            'The dir name "%s" is not an integer. Skipping' % dir_name
+
+    new_id = highest_num + 1
+    return new_id
+
+def augment_data(path, hue_range=0.05, brightness_range=0.2,
+                 contrast_range=0.2, p_hue=0.8, p_brightness=0.8,
+                 p_contrast=0.8, max_rot=180, max_scale=0.1,
+                 max_shear=10, p_hflip=0.5):
+    ids = next(os.walk(path))[1]
+
+    for i in ids:
+        tfms = [transforms.Grayscale()]
+        mask_tfms = []
+
+        if random.random() < p_hue:
+            tfms.append(transforms.Lambda(lambda x: TF.adjust_hue(
+                x, random.uniform(-hue_range, hue_range))))
+        if random.random() < p_brightness:
+            tfms.append(transforms.Lambda(lambda x: TF.adjust_brightness(
+                x, random.uniform(1-brightness_range,
+                                  1+brightness_range))))
+        if random.random() < p_contrast:
+            tfms.append(transforms.Lambda(lambda x: TF.adjust_contrast(
+                x, random.uniform(1-contrast_range,
+                                  1+contrast_range))))
+
+        angle, scale, shear = get_affine((-max_rot, max_rot),
+                                         (1-max_scale, 1+max_scale),
+                                         (-max_shear, max_shear))
+        affine = transforms.Lambda(lambda x: TF.affine(x, angle, (0, 0),
+                                                       scale, shear))
+        tfms.append(affine)
+        mask_tfms.append(affine)
+
+        if random.random() < p_hflip:
+            hflip = transforms.Lambda(lambda x: TF.hflip(x))
+            tfms.append(hflip)
+            mask_tfms.append(hflip)
+
+        tfms.append(transforms.Grayscale(3))
+        tfms = transforms.Compose(tfms)
+        mask_tfms = transforms.Compose(mask_tfms)
+
+        augs_path = os.path.join(path, i, 'augs')
+        if not os.path.exists(augs_path):
+            os.makedirs(augs_path)
+        new_id = str(getNextId(augs_path))
+        os.makedirs(os.path.join(augs_path, new_id))
+        os.makedirs(os.path.join(augs_path, new_id, 'images'))
+        os.makedirs(os.path.join(augs_path, new_id, 'masks'))
+
+        img = imread(os.path.join(path, i, 'images', f'{i}.png'))
+        img = PIL.Image.fromarray(img)
+        img = tfms(img)
+        img.save(os.path.join(augs_path, new_id, 'images', f'{new_id}.png'))
+
+        mask_path = os.path.join(path, i, 'masks')
+        for k, mask_file in enumerate(next(os.walk(mask_path))[2]):
+            mask = imread(os.path.join(mask_path, mask_file))
+            mask = PIL.Image.fromarray(mask)
+            mask = mask_tfms(mask)
+            mask.save(os.path.join(augs_path, new_id, 'masks',
+                                   f'{new_id}_{k}.png'))
+```
+
+## Metric
+The competition is evaluated using a variation of Intersection over Union (IoU). You can find an explanation [here](https://www.kaggle.com/c/data-science-bowl-2018/overview/evaluation) and a detailed explanation [there](https://www.kaggle.com/stkbailey/step-by-step-explanation-of-scoring-metric). All in all, I did a custom implementation which gives me quite accurate results.
+
+```{python}
+def mean_iou(y_pred, y_true, smooth=1e-6):
+    scores = np.zeros(y_true.shape[0])
+    y_true = y_true.squeeze(1)
+    y_pred = torch.sigmoid(y_pred).squeeze(1)
+    for i in range(y_true.shape[0]):
+        labels_pred = label(y_pred.to('cpu').numpy()[i] > 0.5)
+        labels_true = label(y_true.to('cpu').numpy()[i])
+        score = 0
+        cnt = 0
+        n_masks_pred = np.max(labels_pred)
+        n_masks_true = np.max(labels_true)
+        inter_union = np.zeros((n_masks_pred, n_masks_true, 2), dtype=np.int)
+        for k in range(y_true.shape[1]):
+            for l in range(y_true.shape[2]):
+                m = labels_pred[k, l]
+                n = labels_true[k, l]
+                if m != 0:
+                    inter_union[m-1, :, 1] += 1
+                if n != 0:
+                    inter_union[:, n-1, 1] += 1
+                if m != 0 and n != 0:
+                    inter_union[m-1, n-1, 0] += 1
+        ious = inter_union[:, :, 0]/(
+            inter_union[:, :, 1]-inter_union[:, :, 0]+smooth)
+        for t in np.arange(0.5, 1.0, 0.05):
+            cnt += 1
+            tp = 0
+            fp = 0
+            fn = 0
+            fn_tests = np.ones(n_masks_true, dtype=np.bool)
+            for m in range(n_masks_pred):
+                fp_test = True
+                for n in range(n_masks_true):
+                    if ious[m, n] > t:
+                        tp += 1
+                        fp_test = False
+                        fn_tests[n] = False
+                if fp_test:
+                    fp += 1
+            fn = np.count_nonzero(fn_tests)
+            try:
+                score += tp/(tp+fp+fn)
+            except ZeroDivisionError:
+                pass
+        score = score/cnt
+        scores[i] = score
+    return torch.tensor(scores).mean()
+```
+
+## Training
+We can now start doing some training. For now I'm using a Unet with the encoder being a resnet34 (ideally I would use resnet101 but I can't store it in GPU). I use the one-cycle policy with lr of 2e-4 (I used the `lr_find` function to find it) and weight decay of 0.1. For the loss we use `BCEWithLogitsLoss` which is binary cross-entropy but before the last sigmoid activation. It is apparently more robust, and the fastai unet model doesn't include a sigmoid, so we have to use it. Just don't forget to add sigmoid manually at the end when doing predictions.
+
+```{python}
+device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+learner = unet_learner(db, models[MODEL], pretrained=False, metrics=[mean_iou],
+                       loss_func=nn.BCEWithLogitsLoss(), wd=WD, model_dir=MODELS_PATH)
+```
+
+```{python}
+learner.lr_find(num_it=1000)
+learner.recorder.plot()
+```
+
+Best model is saved in a file whose name contains the main training parameters.
+
+```{python}
+def getNextFilePath(output_folder):
+    highest_num = 0
+    for f in os.listdir(output_folder):
+        if os.path.isfile(os.path.join(output_folder, f)):
+            file_name = os.path.splitext(f)[0]
+            try:
+                split = file_name.split('.')
+                split = split[0].split('_')
+                file_num = int(split[-1])
+                if file_num > highest_num:
+                    highest_num = file_num
+            except ValueError:
+                'The file name "%s" is not an integer. Skipping' % file_name
+
+    output_file = highest_num + 1
+    return output_file
+```
+
+```{python}
+save_name = f'{MODEL}_{EPOCHS}_{LR}_{WD}_{getNextFilePath(MODELS_PATH)}'
+```
+
+```{python}
+learner.fit_one_cycle(EPOCHS, LR,callbacks=[SaveModelCallback(learner, monitor='mean_iou', name=save_name)])
+```
+
+```{python}
+
+```

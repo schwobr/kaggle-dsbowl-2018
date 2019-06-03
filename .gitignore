@@ -125,14 +125,5 @@ dmypy.json
 # vscode
 .vscode/
 
-# all data
-data/*
-
-# submissions
-submissions/*
-
-# models
-models/*
-
 # ignore notebook
 *.ipynb

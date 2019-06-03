@@ -23,5 +23,5 @@ STD = (0.5, 0.5, 0.5)
 BATCH_SIZE = 4
 WD = 0.1
 LR = 2e-4
-EPOCHS = 500
+EPOCHS = 100
 MODEL = "resnet34"

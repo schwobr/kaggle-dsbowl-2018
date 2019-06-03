@@ -13,6 +13,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+from dsbowl.modules.files import getNextId
 
 
 class CellsDataset(Dataset):
@@ -251,21 +252,6 @@ def augment_data(path, hue_range=0.05, brightness_range=0.2,
             mask = mask_tfms(mask)
             mask.save(os.path.join(augs_path, new_id, 'masks',
                                    f'{new_id}_{k}.png'))
-
-
-def getNextId(output_folder):
-    highest_num = -1
-    for d in os.listdir(output_folder):
-        dir_name = os.path.splitext(d)[0]
-        try:
-            i = int(dir_name)
-            if i > highest_num:
-                highest_num = i
-        except ValueError:
-            'The dir name "%s" is not an integer. Skipping' % dir_name
-
-    new_id = highest_num + 1
-    return new_id
 
 
 def get_affine(degrees, scale_ranges, shears):

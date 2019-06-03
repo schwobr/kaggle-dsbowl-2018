@@ -6,19 +6,16 @@ import numpy as np
 
 from fastai.vision.learner import unet_learner
 import fastai.vision.models as mod
-from fastai.callbacks import SaveModelCallback
 
 import torch
 import torch.nn as nn
 from dsbowl.modules.dataset import CellsDataset, load_data
 from dsbowl.modules.preds import predict_TTA_all, create_submission
 from dsbowl.modules.metrics import mean_iou
-from dsbowl.modules.utils import getNextFilePath
 import dsbowl.config as cfg
 
 
-def run():
-    # Models definition
+def run(model):
     models = {
         'resnet34': mod.resnet34, 'resnet50': mod.resnet50,
         'resnet101': mod.resnet101}
@@ -36,8 +33,9 @@ def run():
         pad=True, normalize=(cfg.MEAN, cfg.STD))
 
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    db = load_data(cfg.TRAIN_PATH, size=cfg.TRAIN_WIDTH,
-                   bs=cfg.BATCH_SIZE, testset=testset)
+    db = load_data(
+        cfg.TRAIN_PATH, size=cfg.TRAIN_WIDTH, bs=cfg.BATCH_SIZE,
+        testset=testset, normalize=(cfg.MEAN, cfg.STD))
 
     learner = unet_learner(
         db, models[cfg.MODEL],
@@ -45,16 +43,8 @@ def run():
         loss_func=nn.BCEWithLogitsLoss(),
         wd=cfg.WD, model_dir=cfg.MODELS_PATH)
 
-    save_name = f'{cfg.MODEL}_{cfg.EPOCHS}_'
-    save_name += f'{cfg.LR}_{cfg.WD}_{getNextFilePath(cfg.MODELS_PATH)}'
+    learner.load(model)
 
-    learner.fit_one_cycle(
-        cfg.EPOCHS, cfg.LR,
-        callbacks=[
-            SaveModelCallback(
-                learner, monitor='mean_iou', name=save_name)])
-
-    learner.load(save_name)
     preds, sizes = predict_TTA_all(
         learner, size=(cfg.TEST_HEIGHT, cfg.TEST_WIDTH),
         overlap=cfg.TEST_OVERLAP, device=device)

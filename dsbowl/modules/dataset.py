@@ -4,11 +4,15 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 import torch
+from fastai.vision.data import SegmentationItemList, SegmentationLabelList
+from fastai.vision.image import open_image, Image
+from fastai.vision.transform import rand_pad
 import cv2
-from PIL import Image
+import PIL
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 
 class CellsDataset(Dataset):
@@ -45,7 +49,8 @@ class CellsDataset(Dataset):
                 augs_path = os.path.join(self.path, i, 'augs')
                 spl = i.split('_')
                 if len(spl) == 1:
-                    img_path = os.path.join(self.path, i, 'images', f'{i}.png')
+                    img_path = os.path.join(
+                        self.path, i, 'images', f'{i}.png')
                     mask_path = os.path.join(self.path, i, 'masks')
                 else:
                     augs_path = os.path.join(self.path, spl[0], 'augs')
@@ -56,8 +61,13 @@ class CellsDataset(Dataset):
                 img_path = os.path.join(self.path, i, 'images', f'{i}.png')
                 mask_path = os.path.join(self.path, i, 'masks')
             img = imread(img_path)
+            try:
+                img.shape[2]
+            except IndexError:
+                img = np.expand_dims(img, axis=2)
+                img = np.concatenate((img, img, img), axis=2).astype(np.uint8)
             sizes.append(torch.tensor(img.shape).unsqueeze(0))
-            img = Image.fromarray(img)
+            img = PIL.Image.fromarray(img)
 
             if self.grayscale:
                 tfms.append(transforms.Grayscale(3))
@@ -126,7 +136,7 @@ class CellsDataset(Dataset):
                     np.ones((3, 3),
                             np.uint8),
                     iterations=1)
-            mask_ = Image.fromarray(mask_)
+            mask_ = PIL.Image.fromarray(mask_)
             mask_ = transform(mask_)
             mask = mask + mask_
         return mask
@@ -162,8 +172,9 @@ def load_train_data(path, height=256, width=256, bs=8, val_split=0.2,
 
 
 def get_stats(path, channels=3, bs=8, num_workers=0):
-    dataset = CellsDataset(path, next(os.walk(path))[1], train=False,
-                           crop=True, erosion=False, grayscale=True, aug=False)
+    dataset = CellsDataset(
+        path, next(os.walk(path))[1],
+        train=False, crop=True, erosion=False, grayscale=True, aug=False)
     dl = DataLoader(dataset, batch_size=bs, num_workers=num_workers,
                     shuffle=False)
     mean = torch.zeros(channels)
@@ -229,14 +240,14 @@ def augment_data(path, hue_range=0.05, brightness_range=0.2,
         os.makedirs(os.path.join(augs_path, new_id, 'masks'))
 
         img = imread(os.path.join(path, i, 'images', f'{i}.png'))
-        img = Image.fromarray(img)
+        img = PIL.Image.fromarray(img)
         img = tfms(img)
         img.save(os.path.join(augs_path, new_id, 'images', f'{new_id}.png'))
 
         mask_path = os.path.join(path, i, 'masks')
         for k, mask_file in enumerate(next(os.walk(mask_path))[2]):
             mask = imread(os.path.join(mask_path, mask_file))
-            mask = Image.fromarray(mask)
+            mask = PIL.Image.fromarray(mask)
             mask = mask_tfms(mask)
             mask.save(os.path.join(augs_path, new_id, 'masks',
                                    f'{new_id}_{k}.png'))
@@ -271,3 +282,51 @@ def get_affine(degrees, scale_ranges, shears):
         shear = 0.0
 
     return angle, scale, shear
+
+
+def load_data(path, size=256, bs=8, val_split=0.2,
+              erosion=True, normalize=None, testset=None):
+    train_list = (
+        SegmentationItemList.
+        from_folder(path, extensions=['.png']).
+        filter_by_func(lambda fn: Path(fn).parent.name == 'images').
+        split_by_rand_pct(valid_pct=val_split).
+        label_from_func(
+            lambda x: x.parents[1] / 'masks/', label_cls=MultiMasksList,
+            classes=['nucl'], erosion=erosion).transform(
+            (rand_pad(0, size), rand_pad(0, size)), tfm_y=True))
+    if testset:
+        train_list.test = testset
+    train_list = train_list.databunch(bs=bs, num_workers=0)
+    if normalize:
+        train_list = train_list.normalize(
+            [torch.tensor(normalize[0]),
+             torch.tensor(normalize[1])])
+    return train_list
+
+
+class MultiMasksList(SegmentationLabelList):
+    def __init__(self, *args, erosion=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.erosion = erosion
+
+    def open(self, fn):
+        mask_files = next(os.walk(fn))[2]
+        mask = open_image(os.path.join(fn, mask_files.pop(0)),
+                          convert_mode='L').px
+        for mask_file in mask_files:
+            mask += open_image(os.path.join(fn, mask_file),
+                               convert_mode='L').px
+        if self.erosion:
+            mask = torch.tensor(
+                cv2.erode(
+                    mask.numpy().squeeze().astype(np.uint8),
+                    np.ones((3, 3),
+                            np.uint8),
+                    iterations=1)).unsqueeze(0)
+        return Image(mask.float())
+
+    def analyze_pred(self, pred, thresh: float = 0.5):
+        return (pred > thresh).float()
+
+    def reconstruct(self, t): return Image(t)

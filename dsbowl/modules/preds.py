@@ -6,7 +6,7 @@ import cv2
 
 from math import ceil
 
-from tqdm import tqdm_notebook
+from tqdm.autonotebook import tqdm
 from skimage.morphology import label
 
 from fastai.basic_data import DatasetType
@@ -37,7 +37,7 @@ def predict_all(learner):
     preds = []
     sizes = []
     with torch.no_grad():
-        for X_test, sizes_test in tqdm_notebook(learner.dl(DatasetType.Test)):
+        for X_test, sizes_test in tqdm(learner.dl(DatasetType.Test)):
             sizes.append(sizes_test)
             preds.append(learner.model(X_test).cpu())
     sizes = torch.cat(sizes).numpy().squeeze()
@@ -51,9 +51,9 @@ def predict_TTA_all(learner, size=(512, 512), overlap=64,
     preds = []
     sizes = []
     with torch.no_grad():
-        for X_test, sizes_test in tqdm_notebook(learner.dl(DatasetType.Test)):
+        for X_test, sizes_test in tqdm(learner.dl(DatasetType.Test)):
             sizes.append(sizes_test)
-            for tens, s in zip(X_test, sizes_test.squeeze()):
+            for tens, s in zip(X_test, sizes_test):
                 crops, pos, overlaps = get_crops(tens.cpu()[:, :s[0], :s[1]],
                                                  size, overlap)
                 pred = torch.zeros((s[0], s[1]))
@@ -61,8 +61,8 @@ def predict_TTA_all(learner, size=(512, 512), overlap=64,
                     img = TF.to_pil_image(crop)
                     res = predict_TTA(learner, img, size, rotations, device)
                     pred[x_min:x_max, y_min:y_max] += res[
-                        :x_max-x_min, :y_max-y_min]/overlaps[
                         :x_max-x_min, :y_max-y_min]
+                pred /= overlaps
                 preds.append(pred.numpy())
     sizes = torch.cat(sizes).cpu().numpy().squeeze()
     return preds, sizes
@@ -149,7 +149,7 @@ def create_submission(preds, sizes, test_ids, folder, resize=False):
         preds_test_upsampled = preds
     new_test_ids = []
     rles = []
-    for n, id_ in enumerate(tqdm_notebook(test_ids)):
+    for n, id_ in enumerate(tqdm(test_ids)):
         rle = list(prob_to_rles(preds_test_upsampled[n]))
         rles.extend(rle)
         if rle == []:

@@ -5,7 +5,7 @@ from torchvision import transforms
 import torchvision.transforms.functional as TF
 import torch
 from fastai.vision.data import SegmentationItemList, SegmentationLabelList
-from fastai.vision.image import (open_image,  Image)
+from fastai.vision.image import open_image, Image
 from fastai.vision.transform import rand_pad
 import cv2
 import PIL

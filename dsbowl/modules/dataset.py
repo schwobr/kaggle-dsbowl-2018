@@ -285,7 +285,7 @@ def get_affine(degrees, scale_ranges, shears):
 
 
 def load_data(path, size=256, bs=8, val_split=0.2,
-              erosion=True, normalize=False, testset=None):
+              erosion=True, normalize=None, testset=None):
     train_list = (
         SegmentationItemList.
         from_folder(path, extensions=['.png']).
@@ -299,7 +299,9 @@ def load_data(path, size=256, bs=8, val_split=0.2,
         train_list.test = testset
     train_list = train_list.databunch(bs=bs, num_workers=0)
     if normalize:
-        train_list = train_list.normalize()
+        train_list = train_list.normalize(
+            [torch.tensor(normalize[0]),
+             torch.tensor(normalize[1])])
     return train_list
 
 

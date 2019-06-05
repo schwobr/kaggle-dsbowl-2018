@@ -54,8 +54,8 @@ def predict_TTA_all(learner, size=(512, 512), overlap=64,
 
 def get_crops(img, size, overlap):
     n, h, w = img.size()
-    n_h = ceil((h+overlap/2-1)/(size[0]-overlap))
-    n_w = ceil((w+overlap/2-1)/(size[1]-overlap))
+    n_h = max(1, ceil((h-size[0])/(size[0]-overlap)))
+    n_w = max(1, ceil((w-size[1])/(size[1]-overlap)))
     crops = []
     pos = []
     overlaps = torch.zeros((h, w))
@@ -90,7 +90,8 @@ def predict_TTA(learner, img, size, rotations, device):
 
         out_flipped = learner.model(rot_flipped).cpu().squeeze()
         out_flipped = torch.sigmoid(out_flipped).squeeze()
-        out_flipped = TF.hflip(TF.rotate(TF.to_pil_image(out_flipped), -angle))
+        out_flipped = TF.hflip(
+            TF.rotate(TF.to_pil_image(out_flipped), -angle))
         out_flipped = TF.to_tensor(out_flipped).squeeze()
 
         res += (out_rot+out_flipped)/2
@@ -145,6 +146,7 @@ def create_submission(preds, sizes, test_ids, folder, resize=False):
     sub['EncodedPixels'] = pd.Series(rles).apply(
         lambda x: ' '.join(str(y) for y in x))
 
-    sub_file = os.path.join(folder,
-                            f'sub_dsbowl_pt_{getNextFilePath(folder)}.csv')
+    base_name = 'sub_dsbowl_pt'
+    sub_file = os.path.join(
+        folder, base_name+f'_{getNextFilePath(folder, base_name)}.csv')
     sub.to_csv(sub_file, index=False)

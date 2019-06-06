@@ -32,17 +32,12 @@ class CellsDataset(Dataset):
         return len(self.ids)
 
     def __getitem__(self, idx):
-        ids = np.array(self.ids[idx], ndmin=1)
-        images = []
-        masks = []
-        for i in ids:
-            img_path, mask_path = self.__get_paths(i)
-            img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
-            mask = self.__get_mask(mask_path)
-            transformed = transforms(image=img, mask=mask)
-            images.append(transformed['image'])
-            masks.append(transforms['mask'])
-        return torch.cat(images), torch.cat(masks)
+        i = self.ids[idx]
+        img_path, mask_path = self.__get_paths(i)
+        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        mask = self.__get_mask(mask_path)
+        transformed = transforms(image=img, mask=mask)
+        return transformed['image'], transforms['mask']
 
     def __get_paths(self, i):
         if self.use_augs:
@@ -79,7 +74,8 @@ class CellsDataset(Dataset):
             mask = mask + mask_
         return mask
 
-    def show(self, i, show_mask=True, label=False):
+    def show(self, idx, show_mask=True, label=False):
+        i = self.ids[idx]
         img_path, mask_path = self.__get_paths(self.ids[i])
         img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
         mask = self.__get_mask(mask_path, eorsion=False, label=label)
@@ -102,8 +98,40 @@ class CellsDataset(Dataset):
             plt.imshow(img)
 
     def show_rand(self, show_mask=True, label=False):
-        i = random.randint(0, len(self.ids)-1)
-        self.show(i, show_mask=show_mask, label=label)
+        idx = random.randint(0, len(self.ids)-1)
+        self.show(idx, show_mask=show_mask, label=label)
+
+
+class Testset(Dataset):
+    def __init__(self, path, ids, size=1388, transforms=None):
+        self.path = path
+        self.ids = ids
+        if isinstance(size, Number):
+            size = (size, size)
+        self.size = size
+        self.transforms = transforms
+
+    def __len__(self):
+        return len(self.ids)
+
+    def __getitem__(self, idx):
+        i = self.ids[idx]
+        img_path = os.path.join(self.path, i, 'images', f'{i}.png')
+        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        transformed = transforms(image=img)
+        return transformed['image']
+
+    def show(self, idx):
+        i = self.ids[idx]
+        img_path = os.path.join(self.path, i, 'images', f'{i}.png')
+        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        plt.figure(0, (15, 15))
+        plt.axis('off')
+        plt.imshow(img)
+
+    def show_rand(self):
+        idx = random.randint(0, len(self.ids)-1)
+        self.show(idx)
 
 
 class CellsDataset1(Dataset):

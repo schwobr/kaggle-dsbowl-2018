@@ -72,7 +72,7 @@ class Net:
 
                         running_loss += loss.item()
                         acc = torch.mean([(torch.mean(
-                                          metric(target.cpu(), output.cpu()))
+                                          metric(target, output))
                             for metric in self.metrics)])
                         running_acc += acc.item()
                         k += 1
@@ -106,6 +106,26 @@ class Net:
         self.model.load_state_dict(torch.load(
             os.path.join(self.models_dir, save_name)))
         return self.model, val_acc_history
+
+    def score(self, dl, device):
+        loss_tot = 0
+        metrics_tot = {metric: 0 for metric in self.metrics}
+        for input, target in dl:
+            input = input.to(device)
+            target = target.to(device)
+            with torch.no_grad():
+                output = self.model(input)
+                loss_tot += self.loss(output, target).item()
+                for metric in self.metrics:
+                    metrics_tot[metric] += torch.mean(
+                        metric(target, output)).item()
+        loss_tot /= len(dl)
+        s = [f'loss: {loss_tot:.4f}']
+        for metric in metrics_tot:
+            metrics_tot[metric] /= len(dl)
+            s.append[f'{metric.__name__}: {metrics_tot[metric]:.4f}']
+        print('; '.join(s))
+        return loss_tot, metrics_tot
 
 
 class Scheduler:

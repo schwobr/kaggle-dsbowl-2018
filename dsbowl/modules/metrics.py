@@ -5,8 +5,8 @@ from skimage.morphology import label
 
 def mean_iou(y_pred, y_true, smooth=1e-6):
     scores = np.zeros(y_true.shape[0])
-    y_true = y_true.squeeze(1)
-    y_pred = torch.sigmoid(y_pred).squeeze(1)
+    y_true = y_true.cpu().squeeze(1)
+    y_pred = torch.sigmoid(y_pred.cpu()).squeeze(1)
     for i in range(y_true.shape[0]):
         labels_pred = label(y_pred.to('cpu').numpy()[i] > 0.5)
         labels_true = label(y_true.to('cpu').numpy()[i])

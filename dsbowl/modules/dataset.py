@@ -12,11 +12,101 @@ import PIL
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 from pathlib import Path
 from dsbowl.modules.files import getNextId
+from numbers import Number
 
 
 class CellsDataset(Dataset):
+    def __init__(self, path, ids, size=256, transforms=None, use_augs=True):
+        self.path = path
+        self.ids = ids
+        if isinstance(size, Number):
+            size = (size, size)
+        self.size = size
+        self.transforms = transforms
+        self.use_augs = use_augs
+
+    def __len__(self):
+        return len(self.ids)
+
+    def __getitem__(self, idx):
+        ids = np.array(self.ids[idx], ndmin=1)
+        images = []
+        masks = []
+        for i in ids:
+            img_path, mask_path = self.__get_paths(i)
+            img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+            mask = self.__get_mask(mask_path)
+            transformed = transforms(image=img, mask=mask)
+            images.append(transformed['image'])
+            masks.append(transforms['mask'])
+        return torch.cat(images), torch.cat(masks)
+
+    def __get_paths(self, i):
+        if self.use_augs:
+            augs_path = os.path.join(self.path, i, 'augs')
+            spl = i.split('_')
+            if len(spl) == 1:
+                img_path = os.path.join(
+                    self.path, i, 'images', f'{i}.png')
+                mask_path = os.path.join(self.path, i, 'masks')
+            else:
+                augs_path = os.path.join(self.path, spl[0], 'augs')
+                img_path = os.path.join(augs_path, spl[1],
+                                        'images', f'{spl[1]}.png')
+                mask_path = os.path.join(augs_path, spl[1], 'masks')
+        else:
+            img_path = os.path.join(self.path, i, 'images', f'{i}.png')
+            mask_path = os.path.join(self.path, i, 'masks')
+        return img_path, mask_path
+
+    def __get_mask(self, mask_path, erosion=True, label=False):
+        mask = np.zeros(self.size, np.uint8)
+        for k, mask_file in enumerate(next(os.walk(mask_path))[2]):
+            mask_ = cv2.imread(
+                os.path.join(mask_path, mask_file),
+                cv2.IMREAD_UNCHANGED)
+            if erosion:
+                mask_ = cv2.erode(
+                    mask_.astype(np.uint8),
+                    np.ones((3, 3),
+                            np.uint8),
+                    iterations=1)
+            if label:
+                mask_ = (mask_/255*(k+1)).astype(np.uint8)
+            mask = mask + mask_
+        return mask
+
+    def show(self, i, show_mask=True, label=False):
+        img_path, mask_path = self.__get_paths(self.ids[i])
+        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        mask = self.__get_mask(mask_path, eorsion=False, label=label)
+        plt.figure(0, (15, 15))
+        if show_mask:
+            if label:
+                cmap = ListedColormap(np.random.rand(256, 3))
+                cmap.set_bad(color='black')
+                mask = np.where(mask > 0, mask, np.nan)
+            else:
+                cmap = 'gray'
+            plt.subplot(121)
+            plt.axis('off')
+            plt.imshow(img)
+            plt.subplot(122)
+            plt.axis('off')
+            plt.imshow(mask, cmap=cmap)
+        else:
+            plt.axis('off')
+            plt.imshow(img)
+
+    def show_rand(self, show_mask=True, label=False):
+        i = random.randint(0, len(self.ids)-1)
+        self.show(i, show_mask=show_mask, label=label)
+
+
+class CellsDataset1(Dataset):
     def __init__(self, path, ids, height=256, width=256, train=True,
                  erosion=True, normalize=None, crop=True, resize=False,
                  pad=False, grayscale=True, aug=True):
@@ -144,10 +234,9 @@ class CellsDataset(Dataset):
 
 
 def load_train_data(path, height=256, width=256, bs=8, val_split=0.2,
-                    erosion=True, normalize=None, crop=True,
-                    grayscale=True, aug=True, shuffle=True):
+                    transforms=transforms, use_augs=True, shuffle=True):
     ids = next(os.walk(path))[1]
-    if aug:
+    if use_augs:
         aug_ids = []
         for i in ids:
             augs_path = os.path.join(path, i, 'augs')
@@ -159,12 +248,12 @@ def load_train_data(path, height=256, width=256, bs=8, val_split=0.2,
     n_ids = len(ids)
     k = (1-val_split)*random.random()
     trainset = CellsDataset(path, ids[:int(k*n_ids)]+ids[
-                            int((k+val_split)*n_ids):], height, width,
-                            erosion=erosion, normalize=normalize, crop=crop,
-                            grayscale=grayscale, aug=aug)
-    valset = CellsDataset(path, ids[int(k*n_ids):int((k+val_split)*n_ids)],
-                          height, width, erosion=erosion, normalize=normalize,
-                          crop=crop, grayscale=grayscale, aug=aug)
+                            int((k+val_split)*n_ids):], size=(height, width),
+                            transforms=transforms, use_augs=use_augs)
+    valset = CellsDataset(
+        path, ids[int(k * n_ids): int((k + val_split) * n_ids)],
+        size=(height, width),
+        transforms=transforms, use_augs=use_augs)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=bs,
                                               shuffle=True, num_workers=0)
     valloader = torch.utils.data.DataLoader(valset, batch_size=bs,

@@ -2,7 +2,10 @@ from tqdm.autonotebook import tqdm
 from datetime import timedelta
 import os
 import time
+import math
 import torch
+from numbers import Number
+import annealings as an
 
 
 class Net:
@@ -16,8 +19,14 @@ class Net:
     def __call__(self, input):
         return self.model(input)
 
-    def fit(self, dls, num_epochs, save_name, device, state_dict=None):
+    def fit(
+            self, dls, num_epochs, save_name, device, state_dict=None,
+            scheduler=None):
         since = time.time()
+        if scheduler:
+            scheduler = scheduler(self.optim, num_epochs)
+        else:
+            scheduler = Scheduler(self.optim, num_epochs)
 
         val_acc_history = []
 
@@ -58,6 +67,8 @@ class Net:
                             if phase == 'train':
                                 loss.backward()
                                 self.optim.step()
+                                if scheduler.step_on_batch:
+                                    scheduler.step()
 
                         running_loss += loss.item()
                         acc = torch.mean([(torch.mean(
@@ -81,6 +92,9 @@ class Net:
                            f'Dur: {timedelta(seconds=time_elapsed)}'))
                 if phase == 'val':
                     val_acc_history.append(epoch_acc)
+                else:
+                    if not scheduler.step_on_batch:
+                        scheduler.step()
             print()
 
         time_elapsed = time.time() - since
@@ -92,3 +106,73 @@ class Net:
         self.model.load_state_dict(torch.load(
             os.path.join(self.models_dir, save_name)))
         return self.model, val_acc_history
+
+
+class Scheduler:
+    def __init__(
+            self, optim=None, n_epochs=None, last_step=-1,
+            step_on_batch=False):
+        self.optim = optim
+        self.n_epochs = None
+        self.last_step = last_step
+        self.step(last_step)
+        self.step_on_batch = step_on_batch
+
+    def __call__(self, optim, n_epochs):
+        self.optim = optim
+        self.n_epochs = n_epochs
+        return self
+
+    def get_lr(self):
+        return [group['lr'] for group in self.optim.param_groups]
+
+    def step(self, epoch=None):
+        assert self.optim, 'An optimizer must be specified'
+        assert self.n_epochs, 'A number of epochs must be specified'
+        if epoch is None:
+            epoch = self.last_step + 1
+        self.last_step = epoch
+        for param_group, lr in zip(self.optim.param_groups, self.get_lr()):
+            param_group['lr'] = lr
+
+
+class OneCycleScheduler(Scheduler):
+    def __init__(
+            self, lr_max, train_len, div_factor=25, moms=(0.95, 0.85),
+            pct_start=0.3, final_div=1e4, bs=8, **kwargs):
+        super().__init__(step_on_batch=True, **kwargs)
+        if isinstance(lr_max, Number):
+            lr_max = [lr_max for _ in self.optim.param_groups]
+        self.lr_max = lr_max
+        self.lr_min = [lr/div_factor for lr in lr_max]
+        self.mom_max = moms[0]
+        self.mom_min = moms[1]
+        self.final_div = final_div
+        n = math.ceil(train_len/bs)*self.n_epochs
+        self.a1 = pct_start*n
+        self.a2 = n-self.a1
+
+    def get_lr(self):
+        if self.last_step <= self.a1:
+            return [an.annealing_cos(
+                lr1, lr2, self.last_step/self.a1) for lr1, lr2 in zip(
+                self.lr_min, self.lr_max)]
+        else:
+            return [an.annealing_cos(
+                lr1, lr2,
+                (self.last_step-self.a1)/self.a2) for lr1, lr2 in zip(
+                self.lr_max, self.lr_min)]
+
+    def get_mom(self):
+        if self.last_step <= self.a1:
+            return an.annealing_cos(
+                self.mom_max, self.mom_min, self.last_step/self.a1)
+        else:
+            return an.annealing_cos(
+                self.mom_min, self.mom_max, (self.last_step-self.a1)/self.a2)
+
+    def step(self, epoch=None):
+        super().step(epoch)
+        mom = self.get_mom()
+        for param_group in self.optim.param_groups, self.get_lr():
+            param_group['momentum'] = mom

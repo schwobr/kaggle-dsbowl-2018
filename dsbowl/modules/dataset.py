@@ -14,7 +14,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from pathlib import Path
-from dsbowl.modules.files import getNextId
+from modules.files import getNextId
+from modules.transforms import get_basics
 from numbers import Number
 
 
@@ -25,6 +26,8 @@ class CellsDataset(Dataset):
         if isinstance(size, Number):
             size = (size, size)
         self.size = size
+        if transforms is None:
+            transforms = get_basics(size)
         self.transforms = transforms
         self.use_augs = use_augs
 
@@ -72,7 +75,7 @@ class CellsDataset(Dataset):
             if label:
                 mask_ = (mask_/255*(k+1)).astype(np.uint8)
             mask = mask + mask_
-        return mask
+        return np.expand_dims(mask, -1)
 
     def show(self, idx, show_mask=True, label=False):
         i = self.ids[idx]
@@ -109,6 +112,8 @@ class Testset(Dataset):
         if isinstance(size, Number):
             size = (size, size)
         self.size = size
+        if transforms is None:
+            transforms = get_basics(size)
         self.transforms = transforms
 
     def __len__(self):

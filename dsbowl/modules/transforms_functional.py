@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import math
+from numbers import Number
 from torchvision.transforms.functional import to_tensor
 
 
@@ -60,7 +61,46 @@ def shift_scale_rotate(img, angle, scale, dx, dy):
     return img
 
 
-def crop(img, height, width, dx, dy):
+def resize(img, size):
+    if isinstance(size, Number):
+        size = (size, size)
+    if max(size) > np.max(img.shape):
+        interpolation = cv2.INTER_LINEAR
+    else:
+        interpolation = cv2.INTER_AREA
+    return cv2.resize(img, size, interpolation)
+
+
+def pad(img, pad_width, mode='constant', **kwargs):
+    return np.pad(img, pad_width, mode, **kwargs)
+
+
+def resize_pad(img, size, mode='constant', **kwargs):
+    h, w, c = img.shape
+    if isinstance(size, Number):
+        size = (size, size)
+    else:
+        r1 = h/w
+        r2 = size[0]/size[1]
+        if r1 == r2:
+            return resize(img, size)
+        elif r1 < r2:
+            size_h = size[0]*r1/r2
+            size_w = size[1]
+        else:
+            size_h = size[0]
+            size_w = size[1]*r2/r1
+        return pad(
+            resize(img, (size_h, size_w)),
+            ((0, size - size_h),
+             (0, size - size_w),
+             (0, 0)), mode=mode, **kwargs)
+
+
+def crop(img, size, dx, dy):
+    if isinstance(size, Number):
+        size = (size, size)
+    height, width = size
     h, w, c = img.shape
     xmax = max(0, h-height)
     ymax = max(0, w-width)
@@ -69,7 +109,10 @@ def crop(img, height, width, dx, dy):
     return img[x1:x1+height, y1:y1+width, :]
 
 
-def center_crop(img, height, width):
+def center_crop(img, size):
+    if isinstance(size, Number):
+        size = (size, size)
+    height, width = size
     h, w, c = img.shape
     dy = (h-height)//2
     dx = (w-width)//2

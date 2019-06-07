@@ -128,24 +128,61 @@ class ShiftScaleRotate(DualTransform):
                                            self.shift_limit))}
 
 
-class CenterCrop(DualTransform):
-    def __init__(self, height, width, prob=0.5):
+class Resize(DualTransform):
+    def __init__(self, size, prob=1.):
         super().__init__(prob)
-        self.height = height
-        self.width = width
+        self.size = size
 
     def apply(self, img, **params):
-        return F.center_crop(img, self.height, self.width)
+        return F.resize(img, self.size)
+
+
+class Pad(DualTransform):
+    def __init__(self, pad_width, mode='constant', prob=1., **kwargs):
+        super().__init__(prob)
+        self.pad_width = pad_width
+        self.mode = mode
+        self.params = kwargs
+
+    def apply(self, img, **params):
+        return F.pad(img, self.pad_width, self.mode, **params)
+
+    def get_params(self):
+        return self.params
+
+
+class ResizePad(DualTransform):
+    def __init__(self, size, pad_width, mode='constant', prob=1., **kwargs):
+        super().__init__(prob)
+        self.size = size
+        self.pad_width = pad_width
+        self.mode = mode
+        self.params = kwargs
+
+    def apply(self, img, **params):
+        return F.resize_pad(
+            img, self.size, self.pad_width, self.mode, **params)
+
+    def get_params(self):
+        return self.params
+
+
+class CenterCrop(DualTransform):
+    def __init__(self, size, prob=1.):
+        super().__init__(prob)
+        self.size = size
+
+    def apply(self, img, **params):
+        return F.center_crop(img, self.size)
 
 
 class RandomCrop(DualTransform):
-    def __init__(self, height, width, prob=0.5):
+    def __init__(self, size, prob=1.):
         super().__init__(prob)
-        self.height = height
-        self.width = width
+        self.size = size
 
     def apply(self, img, dx=0, dy=0):
-        return F.crop(img, self.height, self.width, dx, dy)
+        return F.crop(img, self.size, dx, dy)
 
     def get_params(self):
         return {'dx': random.random(), 'dy': random.random()}
@@ -160,6 +197,9 @@ class ToThreeChannelGray(ImageOnlyTransform):
 
 
 class ToGray(ImageOnlyTransform):
+    def __init__(self, prob=1.):
+        super().__init__(prob)
+
     def apply(self, img, **params):
         return F.to_gray(img)
 
@@ -190,3 +230,17 @@ class ToTensor(DualTransform):
 
     def apply(self, img, **params):
         return F.to_tensor(img)
+
+
+def get_train_tfms(size):
+    return Compose(ToThreeChannelGray(),
+                   RandomCrop(size),
+                   FixMask(),
+                   ToTensor())
+
+
+def get_basics(size):
+    return Compose(ToGray(),
+                   ResizePad(size),
+                   FixMask(),
+                   ToTensor())

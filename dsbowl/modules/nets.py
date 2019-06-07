@@ -6,6 +6,7 @@ import math
 import torch
 from numbers import Number
 import annealings as an
+from modules.preds import predict_all, predict_TTA_all
 
 
 class Net:
@@ -124,6 +125,12 @@ class Net:
             s.append[f'{metric.__name__}: {metrics_tot[metric]:.4f}']
         print('; '.join(s))
         return loss_tot, metrics_tot
+
+    def predict(self, dl, device, TTA=True, **kwargs):
+        if TTA:
+            return predict_TTA_all(self.model, dl, device, **kwargs)
+        else:
+            return predict_all(self.model, dl)
 
 
 class Scheduler:

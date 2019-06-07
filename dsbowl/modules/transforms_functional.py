@@ -152,3 +152,7 @@ def fix_mask(msk):
 
 def img_to_tensor(im):
     return to_tensor(im)
+
+
+def tensor_to_img(im):
+    return np.moveaxis(im.numpy(), 0, -1).squeeze()

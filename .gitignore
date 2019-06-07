@@ -127,3 +127,6 @@ dmypy.json
 
 # ignore notebook
 *.ipynb
+
+# ignore created csvs
+*.csv

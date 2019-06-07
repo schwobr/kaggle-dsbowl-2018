@@ -51,7 +51,7 @@ class CellsDataset(Dataset):
         else:
             img_path = self.path / str(i) / 'images' / f'{i}.png'
             mask_path = self.path / str(i) / 'masks'
-        return img_path, mask_path
+        return str(img_path), str(mask_path)
 
     def __get_mask(self, mask_path, erosion=True, label=False):
         mask = np.zeros(self.size, np.uint8)
@@ -115,14 +115,14 @@ class Testset(Dataset):
     def __getitem__(self, idx):
         i = self.ids[idx]
         img_path = self.path / str(i) / 'images' / f'{i}.png'
-        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
         transformed = transforms(image=img)
         return transformed['image']
 
     def show(self, idx):
         i = self.ids[idx]
         img_path = self.path / str(i) / 'images' / f'{i}.png'
-        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
         plt.figure(0, (15, 15))
         plt.axis('off')
         plt.imshow(img)
@@ -228,14 +228,14 @@ def augment_data(path, hue_range=0.05, brightness_range=0.2,
         os.makedirs(augs_path / new_id / 'images')
         os.makedirs(augs_path / new_id / 'masks')
 
-        img = cv2.imread(path / str(i) / 'images' / f'{i}.png')
+        img = cv2.imread(str(path / str(i) / 'images' / f'{i}.png'))
         img = PIL.Image.fromarray(img)
         img = tfms(img)
         img.save(augs_path / new_id / 'images' / f'{new_id}.png')
 
         mask_path = path / str(i) / 'masks'
         for k, mask_file in enumerate(next(os.walk(mask_path))[2]):
-            mask = cv2.imread(mask_path / mask_file)
+            mask = cv2.imread(str(mask_path / mask_file))
             mask = PIL.Image.fromarray(mask)
             mask = mask_tfms(mask)
             mask.save(augs_path / new_id / 'masks' /

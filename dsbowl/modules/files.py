@@ -41,14 +41,13 @@ def create_csv(dir_path, save_path):
     name = dir_path.name
     df = pd.DataFrame(columns=['ImageId', 'Path',
                                'Height', 'Width', 'Channels'])
-    for i in next(os.walk(dir_path))[1]:
+    for k, i in enumerate(next(os.walk(dir_path))[1]):
         path = dir_path / str(i) / 'images' / f'{i}.png'
-        img = cv2.imread(path)
+        img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
         try:
             h, w, c = img.shape
         except ValueError:
             h, w = img.shape
             c = 1
-        df.append({'ImageId': i, 'Path': path,
-                   'Height': h, 'Width': w, 'Channels': c})
+        df.loc[k] = [i, str(path), h, w, c]
     df.to_csv(save_path / f'{name}.csv')

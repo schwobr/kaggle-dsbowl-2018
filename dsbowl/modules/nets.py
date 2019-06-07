@@ -71,9 +71,8 @@ class Net:
                                     scheduler.step()
 
                         running_loss += loss.item()
-                        acc = torch.mean([(torch.mean(
-                                          metric(target, output))
-                            for metric in self.metrics)])
+                        acc = torch.mean([(metric(target, output)
+                                           for metric in self.metrics)])
                         running_acc += acc.item()
                         k += 1
                         t.postfix["loss"] = running_loss/k
@@ -117,8 +116,7 @@ class Net:
                 output = self.model(input)
                 loss_tot += self.loss(output, target).item()
                 for metric in self.metrics:
-                    metrics_tot[metric] += torch.mean(
-                        metric(target, output)).item()
+                    metrics_tot[metric] += metric(target, output).item()
         loss_tot /= len(dl)
         s = [f'loss: {loss_tot:.4f}']
         for metric in metrics_tot:

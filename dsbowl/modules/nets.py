@@ -1,6 +1,5 @@
 from tqdm.autonotebook import tqdm
 from datetime import timedelta
-import os
 import time
 import math
 import torch
@@ -32,8 +31,7 @@ class Net:
         val_acc_history = []
 
         if state_dict:
-            self.model.load_state_dict(
-                os.path.join(self.models_dir, state_dict))
+            self.model.load_state_dict(self.models_dir / state_dict)
         best_acc = 0
 
         for epoch in range(num_epochs):
@@ -85,7 +83,7 @@ class Net:
 
                 if phase == 'val' and epoch_acc > best_acc:
                     best_acc = epoch_acc
-                    self.model.save(os.path.join(self.models_dir, save_name))
+                    self.model.save(self.models_dir / save_name)
                     time_elapsed = time.time()-epoch_start
                     print((f'{epoch+1}/{num_epochs} Loss: {epoch_loss:.4f} '
                            f'Acc: {epoch_acc:.4f} '
@@ -103,8 +101,7 @@ class Net:
         print(f'Best val Acc: {best_acc:4f}')
 
         # load best model weights
-        self.model.load_state_dict(torch.load(
-            os.path.join(self.models_dir, save_name)))
+        self.model.load_state_dict(torch.load(self.models_dir / save_name))
         return self.model, val_acc_history
 
     def score(self, dl, device):

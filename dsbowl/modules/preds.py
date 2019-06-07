@@ -1,5 +1,3 @@
-import os
-
 import numpy as np
 import pandas as pd
 import cv2
@@ -140,6 +138,5 @@ def create_submission(preds, sizes, test_ids, folder, resize=False):
         lambda x: ' '.join(str(y) for y in x))
 
     base_name = 'sub_dsbowl_pt'
-    sub_file = os.path.join(
-        folder, base_name+f'_{getNextFilePath(folder, base_name)}.csv')
+    sub_file = folder / base_name+f'_{getNextFilePath(folder, base_name)}.csv'
     sub.to_csv(sub_file, index=False)

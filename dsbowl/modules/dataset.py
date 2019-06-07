@@ -39,27 +39,25 @@ class CellsDataset(Dataset):
 
     def __get_paths(self, i):
         if self.use_augs:
-            augs_path = os.path.join(self.path, i, 'augs')
+            augs_path = self.path / str(i) / 'augs'
             spl = i.split('_')
             if len(spl) == 1:
-                img_path = os.path.join(
-                    self.path, i, 'images', f'{i}.png')
-                mask_path = os.path.join(self.path, i, 'masks')
+                img_path = self.path / str(i) / 'images' / f'{i}.png'
+                mask_path = self.path / str(i) / 'masks'
             else:
-                augs_path = os.path.join(self.path, spl[0], 'augs')
-                img_path = os.path.join(augs_path, spl[1],
-                                        'images', f'{spl[1]}.png')
-                mask_path = os.path.join(augs_path, spl[1], 'masks')
+                augs_path = self.path / spl[0] / 'augs'
+                img_path = augs_path / spl[1] / 'images' / f'{spl[1]}.png'
+                mask_path = augs_path / spl[1] / 'masks'
         else:
-            img_path = os.path.join(self.path, i, 'images', f'{i}.png')
-            mask_path = os.path.join(self.path, i, 'masks')
+            img_path = self.path / str(i) / 'images' / f'{i}.png'
+            mask_path = self.path / str(i) / 'masks'
         return img_path, mask_path
 
     def __get_mask(self, mask_path, erosion=True, label=False):
         mask = np.zeros(self.size, np.uint8)
         for k, mask_file in enumerate(next(os.walk(mask_path))[2]):
             mask_ = cv2.imread(
-                os.path.join(mask_path, mask_file),
+                mask_path / mask_file,
                 cv2.IMREAD_UNCHANGED)
             if erosion:
                 mask_ = cv2.erode(
@@ -116,14 +114,14 @@ class Testset(Dataset):
 
     def __getitem__(self, idx):
         i = self.ids[idx]
-        img_path = os.path.join(self.path, i, 'images', f'{i}.png')
+        img_path = self.path / str(i) / 'images' / f'{i}.png'
         img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
         transformed = transforms(image=img)
         return transformed['image']
 
     def show(self, idx):
         i = self.ids[idx]
-        img_path = os.path.join(self.path, i, 'images', f'{i}.png')
+        img_path = self.path / str(i) / 'images' / f'{i}.png'
         img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
         plt.figure(0, (15, 15))
         plt.axis('off')
@@ -140,7 +138,7 @@ def load_train_data(path, height=256, width=256, bs=8, val_split=0.2,
     if use_augs:
         aug_ids = []
         for i in ids:
-            augs_path = os.path.join(path, i, 'augs')
+            augs_path = path / str(i) / 'augs'
             aug_ids += [f'{i}_{aug_i}' for aug_i in next(
                 os.walk(augs_path))[1]]
         ids += aug_ids
@@ -222,26 +220,26 @@ def augment_data(path, hue_range=0.05, brightness_range=0.2,
         tfms = transforms.Compose(tfms)
         mask_tfms = transforms.Compose(mask_tfms)
 
-        augs_path = os.path.join(path, i, 'augs')
+        augs_path = path / str(i) / 'augs'
         if not os.path.exists(augs_path):
             os.makedirs(augs_path)
         new_id = str(getNextId(augs_path))
-        os.makedirs(os.path.join(augs_path, new_id))
-        os.makedirs(os.path.join(augs_path, new_id, 'images'))
-        os.makedirs(os.path.join(augs_path, new_id, 'masks'))
+        os.makedirs(augs_path / new_id)
+        os.makedirs(augs_path / new_id / 'images')
+        os.makedirs(augs_path / new_id / 'masks')
 
-        img = cv2.imread(os.path.join(path, i, 'images', f'{i}.png'))
+        img = cv2.imread(path / str(i) / 'images' / f'{i}.png')
         img = PIL.Image.fromarray(img)
         img = tfms(img)
-        img.save(os.path.join(augs_path, new_id, 'images', f'{new_id}.png'))
+        img.save(augs_path / new_id / 'images' / f'{new_id}.png')
 
-        mask_path = os.path.join(path, i, 'masks')
+        mask_path = path / str(i) / 'masks'
         for k, mask_file in enumerate(next(os.walk(mask_path))[2]):
-            mask = cv2.imread(os.path.join(mask_path, mask_file))
+            mask = cv2.imread(mask_path / mask_file)
             mask = PIL.Image.fromarray(mask)
             mask = mask_tfms(mask)
-            mask.save(os.path.join(augs_path, new_id, 'masks',
-                                   f'{new_id}_{k}.png'))
+            mask.save(augs_path / new_id / 'masks' /
+                      f'{new_id}_{k}.png')
 
 
 def get_affine(degrees, scale_ranges, shears):

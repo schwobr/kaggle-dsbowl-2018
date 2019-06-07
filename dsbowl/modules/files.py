@@ -1,4 +1,6 @@
 import os
+import pandas as pd
+import cv2
 
 
 def getNextId(output_folder):
@@ -19,7 +21,7 @@ def getNextId(output_folder):
 def getNextFilePath(output_folder, base_name):
     highest_num = 0
     for f in os.listdir(output_folder):
-        if os.path.isfile(os.path.join(output_folder, f)):
+        if os.path.isfile(output_folder / f):
             file_name = os.path.splitext(f)[0]
             try:
                 if file_name.split('_')[:-1] == base_name.split('_'):
@@ -33,3 +35,20 @@ def getNextFilePath(output_folder, base_name):
 
     output_file = highest_num + 1
     return output_file
+
+
+def create_csv(dir_path, save_path):
+    name = dir_path.name
+    df = pd.DataFrame(columns=['ImageId', 'Path',
+                               'Height', 'Width', 'Channels'])
+    for i in next(os.walk(dir_path))[1]:
+        path = dir_path / str(i) / 'images' / f'{i}.png'
+        img = cv2.imread(path)
+        try:
+            h, w, c = img.shape
+        except ValueError:
+            h, w = img.shape
+            c = 1
+        df.append({'ImageId': i, 'Path': path,
+                   'Height': h, 'Width': w, 'Channels': c})
+    df.to_csv(save_path / f'{name}.csv')

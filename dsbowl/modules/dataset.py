@@ -132,8 +132,8 @@ class Testset(Dataset):
         self.show(idx)
 
 
-def load_train_data(path, height=256, width=256, bs=8, val_split=0.2,
-                    transforms=transforms, use_augs=True, shuffle=True):
+def load_train_data(path, size=256, bs=8, val_split=0.2,
+                    transforms=None, use_augs=True, shuffle=True):
     ids = next(os.walk(path))[1]
     if use_augs:
         aug_ids = []
@@ -147,17 +147,26 @@ def load_train_data(path, height=256, width=256, bs=8, val_split=0.2,
     n_ids = len(ids)
     k = (1-val_split)*random.random()
     trainset = CellsDataset(path, ids[:int(k*n_ids)]+ids[
-                            int((k+val_split)*n_ids):], size=(height, width),
+                            int((k+val_split)*n_ids):], size=size,
                             transforms=transforms, use_augs=use_augs)
     valset = CellsDataset(
         path, ids[int(k * n_ids): int((k + val_split) * n_ids)],
-        size=(height, width),
+        size=size,
         transforms=transforms, use_augs=use_augs)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=bs,
                                               shuffle=True, num_workers=0)
     valloader = torch.utils.data.DataLoader(valset, batch_size=bs,
                                             shuffle=False, num_workers=0)
     return trainloader, valloader
+
+
+def load_test_data(path, size=256, bs=8, transforms=transforms):
+    test_ids = next(os.walk(path))[1]
+    testset = Testset(path, test_ids,
+                      size=size, transforms=transforms)
+    testloader = DataLoader(testset, batch_size=bs,
+                            shuffle=False, num_workers=0)
+    return testloader
 
 
 def get_stats(path, channels=3, bs=8, num_workers=0):

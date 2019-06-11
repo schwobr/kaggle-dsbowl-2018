@@ -123,8 +123,7 @@ class Unet(nn.Module):
     def __init__(self, encoder, n_classes, act='sigmoid'):
         super(Unet, self).__init__()
         if not isinstance(encoder, resnet.ResNet):
-            print("Encoder should be a resnet")
-            raise ValueError
+            raise ValueError('Encoder should be a resnet')
         self.encoder = encoder
         self.n_classes = n_classes
         self.outputs = []
@@ -188,6 +187,5 @@ def get_activation(act, in_channels, out_channels):
     elif act == 'sigmoid':
         activation = nn.Sigmoid()
     else:
-        print("Invalid activation function")
-        raise ValueError
+        raise ValueError('Invalid activation function')
     return nn.Sequential(conv, activation)

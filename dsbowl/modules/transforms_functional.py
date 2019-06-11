@@ -92,8 +92,8 @@ def resize_pad(img, size, mode='constant', **kwargs):
             size_w = size[1]*r2/r1
         return pad(
             resize(img, (size_h, size_w)),
-            ((0, size - size_h),
-             (0, size - size_w),
+            ((0, size[0] - size_h),
+             (0, size[1] - size_w),
              (0, 0)), mode=mode, **kwargs)
 
 
@@ -120,7 +120,7 @@ def center_crop(img, size):
 
 
 def to_three_channel_gray(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     invgray = 255 - gray
     clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(8, 8))
     if np.mean(invgray) < np.mean(gray):
@@ -130,14 +130,14 @@ def to_three_channel_gray(img):
 
 
 def to_gray(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     if np.mean(gray) > 127:
         gray = 255 - gray
     return cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
 
 
 def add_channel(img):
-    lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(21, 21))
     lab = clahe.apply(lab[:, :, 0])
     if lab.mean() > 127:

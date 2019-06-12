@@ -1,0 +1,656 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.1'
+      jupytext_version: 1.1.3
+  kernelspec:
+    display_name: Python [conda env:pytorch] *
+    language: python
+    name: conda-env-pytorch-py
+---
+
+```{python}
+import os
+import sys
+import random
+import warnings
+import time
+import copy
+
+from defs import *
+
+import numpy as np
+import pandas as pd
+import cv2
+import PIL
+
+import matplotlib.pyplot as plt
+
+from tqdm import tqdm_notebook, tqdm
+from itertools import chain
+from skimage.io import imread, imshow, imread_collection, concatenate_images
+from skimage.transform import resize
+from skimage.morphology import label
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms, utils
+
+IMG_WIDTH = 256
+IMG_HEIGHT = 256
+IMG_CHANNELS = 3
+TRAIN_PATH = './stage1_train/'
+TEST_PATH = './stage2_test_final/'
+BATCH_SIZE = 16
+
+warnings.filterwarnings('ignore', category=UserWarning, module='skimage')
+seed = 42
+random.seed = seed
+np.random.seed = seed
+```
+
+```{python}
+# Get train and test IDs
+train_ids = next(os.walk(TRAIN_PATH))[1]
+test_ids = next(os.walk(TEST_PATH))[1]
+```
+
+```{python}
+class CellsDataset(Dataset):
+    def __init__(self, path, ids, train = False):
+        """
+        Args:
+            csv_file (string): Path to the csv file with annotations.
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.ids = ids
+        self.sizes = []
+        images = []
+        masks = []
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        for i in tqdm_notebook(ids):
+            img = imread(os.path.join(path, i, 'images', '{}.png'.format(i)))[:,:,:IMG_CHANNELS]
+            self.sizes.append(img.shape)
+            img = resize(img, (IMG_HEIGHT, IMG_WIDTH), mode='constant', preserve_range=True)
+            images.append(transform(img.astype('float32')/255)[None, :, :])
+            if train:
+                mask = np.zeros((1, IMG_HEIGHT, IMG_WIDTH), dtype=np.bool)
+                mask_path = os.path.join(path, i, 'masks')
+                for mask_file in next(os.walk(mask_path))[2]:
+                    mask_ = imread(os.path.join(mask_path, mask_file))
+                    mask_ = np.expand_dims(resize(mask_, (IMG_HEIGHT, IMG_WIDTH), mode='constant', preserve_range=True), axis=0)
+                    mask = np.maximum(mask, mask_.astype('bool'))
+                masks.append(torch.tensor(mask))
+        self.X = torch.cat(images)
+        if train:
+            self.y = torch.cat(masks)
+        else: 
+            self.y = None
+        
+    def __len__(self):
+        return len(self.ids)
+
+    def __getitem__(self, idx):
+        if self.y is None:
+            return self.X[idx]
+        else:
+            return self.X[idx], self.y[idx]
+```
+
+```{python}
+def rle_encoding(x):
+    dots = np.where(x.T.flatten() == 1)[0]
+    run_lengths = []
+    prev = -2
+    for b in dots:
+        if (b>prev+1): 
+            run_lengths.extend((b + 1, 0))
+        run_lengths[-1] += 1
+        prev = b
+    return run_lengths
+    
+def to_rles(x):
+    n = np.max(x)
+    for i in range(1, n + 1):
+        yield rle_encoding(x == i)
+        
+def prob_to_rles(x, cutoff=0.5):
+    lab_img = label(x > cutoff)
+    for i in range(1, lab_img.max() + 1):
+        yield rle_encoding(lab_img == i)
+```
+
+```{python}
+def mean_iou(y_true, y_pred):
+    scores = np.zeros(y_true.shape[0])
+    for i in range(y_true.shape[0]):
+        labels_pred = label(y_pred.numpy()[i] > 0.5)
+        labels_true = label(y_true.numpy()[i].squeeze())
+        score = 0
+        cnt = 0
+        gt_masks = list(to_rles(labels_true))
+        pred_masks = list(to_rles(labels_pred))
+        ious = np.zeros((len(pred_masks), len(gt_masks))) 
+        cp = time.time()
+        
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            future_to_idx = {executor.submit(iou, pred_masks[j], gt_masks[k]): (j, k) for j in range(len(pred_masks)) for k in range(len(gt_masks))}
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    data = future.result()
+                except Exception as exc:
+                    print('%r generated an exception: %s' % (idx, exc))
+                else:
+                    ious[idx] = data
+        
+        #for j in range(len(pred_masks)):
+        #    for k in range(len(gt_masks)):
+        #        ious[j, k] = iou(pred_masks[j], gt_masks[k])
+        cp = time.time()
+        for t in np.arange(0.5, 1.0, 0.05):
+            cnt += 1
+            tp = 0
+            fp = 0
+            fn = 0
+            fn_tests = np.ones(len(gt_masks), dtype=np.bool)
+            for j, pred_mask in enumerate(pred_masks):
+                fp_test = True
+                for k, gt_mask in enumerate(gt_masks):
+                    if ious[j, k]>t:
+                        tp += 1 
+                        fp_test = False
+                        fn_tests[k] = False
+                if fp_test:
+                    fp += 1
+            fn = np.count_nonzero(fn_tests)  
+            try:
+                score += float(tp)/float(tp+fp+fn)
+            except:
+                pass
+        score = score/float(cnt)
+        scores[i] = score
+    return torch.as_tensor(scores)
+```
+
+```{python}
+def mean_iou2(y_true, y_pred, smooth = 1e-6):
+    scores = np.zeros(y_true.shape[0])
+    for i in range(y_true.shape[0]):
+        labels_pred = label(y_pred.numpy()[i].squeeze() > 0.5)
+        labels_true = label(y_true.numpy()[i].squeeze())
+        score = 0
+        cnt = 0
+        n_masks_pred = np.max(labels_pred)
+        n_masks_true = np.max(labels_true)
+        inter_union = np.zeros((n_masks_pred, n_masks_true, 2), dtype = np.int)
+        for k in range(y_true.shape[1]):
+            for l in range(y_true.shape[2]):
+                m = labels_pred[k, l]
+                n = labels_true[k, l]
+                if m!=0:
+                    inter_union[m-1, :, 1] += 1
+                if n!=0:
+                    inter_union[:, n-1, 1] += 1
+                if m!=0 and n!=0:
+                    inter_union[m-1, n-1, 0] += 1
+        ious = inter_union[:, :, 0]/(inter_union[:, :, 1]-inter_union[:, :, 0]+smooth)
+        for t in np.arange(0.5, 1.0, 0.05):
+            cnt += 1
+            tp = 0
+            fp = 0
+            fn = 0
+            fn_tests = np.ones(n_masks_true, dtype=np.bool)
+            for m in range(n_masks_pred):
+                fp_test = True
+                for n in range(n_masks_true):
+                    if ious[m, n]>t:
+                        tp += 1 
+                        fp_test = False
+                        fn_tests[n] = False
+                if fp_test:
+                    fp += 1
+            fn = np.count_nonzero(fn_tests)  
+            try:
+                score += tp/(tp+fp+fn)
+            except:
+                pass
+        score = score/cnt
+        scores[i] = score
+    return torch.as_tensor(scores)
+```
+
+```{python}
+class double_conv(nn.Module):
+    '''(conv => BN => ReLU) * 2'''
+    def __init__(self, in_ch, out_ch, dropout=0.5):
+        super(double_conv, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(p=dropout),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+
+class inconv(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super(inconv, self).__init__()
+        self.conv = double_conv(in_ch, out_ch)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+
+
+class down(nn.Module):
+    def __init__(self, in_ch, out_ch, dropout):
+        super(down, self).__init__()
+        self.mpconv = nn.Sequential(
+            nn.MaxPool2d(2),
+            double_conv(in_ch, out_ch, dropout)
+        )
+
+    def forward(self, x):
+        x = self.mpconv(x)
+        return x
+
+
+class up(nn.Module):
+    def __init__(self, in_ch, out_ch, dropout, bilinear=False):
+        super(up, self).__init__()
+
+        #  would be a nice idea if the upsampling could be learned too,
+        #  but my machine do not have enough memory to handle all those weights
+        if bilinear:
+            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        else:
+            self.up = nn.ConvTranspose2d(in_ch, out_ch, 2, stride=2)
+
+        self.conv = double_conv(in_ch, out_ch, dropout)
+
+    def forward(self, x1, x2):
+        x1 = self.up(x1)
+        x = torch.cat([x2, x1], dim=1)
+        x = self.conv(x)
+        return x
+
+
+class outconv(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super(outconv, self).__init__()
+        self.conv = nn.Conv2d(in_ch, out_ch, 1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+```
+
+```{python}
+class UNet(nn.Module):
+
+    def __init__(self, n_channels, n_classes, n_kernels=16):
+        super(UNet, self).__init__()
+        self.inc = inconv(n_channels, n_kernels)
+        self.down1 = down(n_kernels, 2*n_kernels, 0.5)
+        self.down2 = down(2*n_kernels, 4*n_kernels, 0.5)
+        self.down3 = down(4*n_kernels, 8*n_kernels, 0.5)
+        self.down4 = down(8*n_kernels, 16*n_kernels, 0.5)
+        self.up1 = up(16*n_kernels, 8*n_kernels, 0.5)
+        self.up2 = up(8*n_kernels, 4*n_kernels, 0.5)
+        self.up3 = up(4*n_kernels, 2*n_kernels, 0.5)
+        self.up4 = up(2*n_kernels, n_kernels, 0.5)
+        self.outc = outconv(n_kernels, n_classes)
+
+    def forward(self, x):
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+        x = self.up1(x5, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+        x = self.up4(x, x1)
+        x = self.outc(x)
+        return torch.sigmoid(x)
+```
+
+```{python}
+def train_model(model, dataloaders, criterion, optimizer, num_epochs=25):
+    since = time.time()
+
+    val_acc_history = []
+
+    best_model_wts = copy.deepcopy(model.state_dict())
+    best_acc = 0
+
+    for epoch in range(num_epochs):
+        # Each epoch has a training and validation phase
+        for phase in ['train', 'val']:
+            if phase == 'train':
+                model.train()  # Set model to training mode
+            else:
+                model.eval()   # Set model to evaluate mode
+
+            running_loss = 0.0
+            running_corrects = 0
+            k = 0
+            # Iterate over data.
+            
+            with tqdm_notebook(dataloaders[phase], desc='epoch {}/{}: {}'.format(epoch+1, num_epochs, phase), 
+                               postfix={1:0, "loss": 0, "acc": 0}, 
+                               bar_format="{n}/|/{l_bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}], loss: {postfix[loss]}, acc: {postfix[acc]}") as t:
+                for inputs, masks in dataloaders[phase]:
+                    inputs = inputs.to(device)
+                    masks = masks.to(device)
+
+                    # zero the parameter gradients
+                    optimizer.zero_grad()
+
+                    # forward
+                    # track history if only in train
+                    with torch.set_grad_enabled(phase == 'train'):
+                        # Get model outputs and calculate loss
+                        # Special case for inception because in training it has an auxiliary output. In train
+                        #   mode we calculate the loss by summing the final output and the auxiliary output
+                        #   but in testing we only consider the final output.
+                        outputs = model(inputs)
+                        loss = criterion(outputs.squeeze(), masks.squeeze().float())
+
+                        # backward + optimize only if in training phase
+                        if phase == 'train':
+                            loss.backward()
+                            optimizer.step()
+
+                    # statistics
+                    running_loss += loss.item()
+                    iou = mean_iou2(masks.to('cpu'), outputs.to('cpu').clone().detach())
+                    running_corrects += torch.mean(iou).item()
+                    k+=1
+                    t.postfix["loss"] = running_loss/k
+                    t.postfix["acc"] = running_corrects/k
+                    t.update()
+                
+            epoch_loss = running_loss / k
+            epoch_acc = running_corrects / k
+
+            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+
+            # deep copy the model
+            if phase == 'val' and epoch_acc > best_acc:
+                best_acc = epoch_acc
+                best_model_wts = copy.deepcopy(model.state_dict())
+            if phase == 'val':
+                val_acc_history.append(epoch_acc)
+
+        print()
+
+    time_elapsed = time.time() - since
+    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    print('Best val Acc: {:4f}'.format(best_acc))
+
+    # load best model weights
+    model.load_state_dict(best_model_wts)
+    return model, val_acc_history
+```
+
+```{python}
+def getNextFilePath(output_folder):
+    highest_num = 0
+    for f in os.listdir(output_folder):
+        if os.path.isfile(os.path.join(output_folder, f)):
+            file_name = os.path.splitext(f)[0]
+            try:
+                split = file_name.split('.')
+                split = split[0].split('_')
+                file_num = int(split[-1])
+                if file_num > highest_num:
+                    highest_num = file_num
+            except ValueError:
+                'The file name "%s" is not an integer. Skipping' % file_name
+
+    output_file = highest_num + 1
+    return output_file
+```
+
+```{python}
+def save_model(model):
+    mod_path = './models'
+    mod_file = os.path.join(mod_path, f'model_dsbowl_pt_{getNextFilePath(mod_path)}.h5')
+    torch.save(model.state_dict(), mod_file)
+    
+def load_model(version = -1):
+    mod_path = './models'
+    if version==-1:
+        version = getNextFilePath(mod_path)-1
+    model = UNet(IMG_CHANNELS, 1)
+    model.load_state_dict(torch.load(os.path.join(mod_path, f'model_dsbowl_pt_{version}.h5')))
+    return model
+```
+
+```{python}
+print("Loading training set...")
+sys.stdout.flush()
+trainset = CellsDataset(TRAIN_PATH, train_ids[:int(len(train_ids)*0.9)], train= True)
+print("Loading validation set...")
+sys.stdout.flush()
+valset = CellsDataset(TRAIN_PATH, train_ids[int(len(train_ids)*0.9):], train= True)
+
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=BATCH_SIZE,
+                                          shuffle=True, num_workers=0)
+valloader = torch.utils.data.DataLoader(valset, batch_size=BATCH_SIZE,
+                                          shuffle=True, num_workers=0)
+dataloaders = {'train': trainloader, 'val': valloader}
+```
+
+```{python}
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+net = UNet(IMG_CHANNELS, 1, 32)
+if torch.cuda.device_count() > 1:
+    net = nn.DataParallel(net) 
+net.to(device)
+
+criterion = nn.BCELoss()
+
+optimizer = optim.Adam(net.parameters(), lr=1e-3)
+```
+
+```{python}
+mod, _ = train_model(net, dataloaders, criterion, optimizer, num_epochs=50)
+```
+
+```{python}
+print("Loading test set...")
+sys.stdout.flush()
+testset = CellsDataset(TEST_PATH, test_ids)
+
+testloader = torch.utils.data.DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+```
+
+```{python}
+preds = []
+sizes_test = testset.sizes
+with torch.no_grad():
+    for images in testloader:
+        preds.append(net(images.to(device)).to('cpu'))
+preds = torch.cat(preds).numpy()
+preds = preds.squeeze()
+```
+
+```{python}
+def create_submission(preds, sizes_test, test_ids):
+    preds_test_upsampled = []
+    for i, pred in enumerate(preds):
+        preds_test_upsampled.append(resize(pred, (sizes_test[i][0], sizes_test[i][1]), 
+                                           mode='constant', preserve_range=True))
+    
+    new_test_ids = []
+    rles = []
+    for n, id_ in enumerate(tqdm_notebook(test_ids)):
+        rle = list(prob_to_rles(preds_test_upsampled[n]))
+        rles.extend(rle)
+        if rle==[]:
+            rles.append([])
+        new_test_ids.extend([id_] * max(1, len(rle)))
+
+    sub = pd.DataFrame()
+    sub['ImageId'] = new_test_ids
+    sub['EncodedPixels'] = pd.Series(rles).apply(lambda x: ' '.join(str(y) for y in x))
+    
+    sub_path='./submissions'
+    sub_file = os.path.join(sub_path, f'sub_dsbowl_pt_{getNextFilePath(sub_path)}.csv')
+    sub.to_csv(sub_file, index=False)
+```
+
+```{python}
+create_submission(preds, sizes_test, test_ids)
+```
+
+```{python}
+save_model(mod)
+```
+
+```{python}
+preds_test_upsampled = []
+for i, pred in enumerate(preds):
+    preds_test_upsampled.append(resize(pred, (sizes_test[i][0], sizes_test[i][1]), 
+                                       mode='constant', preserve_range=True))
+
+new_test_ids = []
+rles = []
+for n, id_ in enumerate(tqdm_notebook(test_ids)):
+    rle = list(prob_to_rles(preds_test_upsampled[n]))
+    rles.extend(rle)
+    if rle==[]:
+        rles.append([])
+    new_test_ids.extend([id_] * max(1, len(rle)))
+
+sub = pd.DataFrame()
+sub['ImageId'] = new_test_ids
+sub['EncodedPixels'] = pd.Series(rles).apply(lambda x: ' '.join(str(y) for y in x))
+```
+
+```{python}
+sub_path='./submissions'
+sub_file = os.path.join(sub_path, f'sub_dsbowl_pt_{getNextFilePath(sub_path)}.csv')
+sub.to_csv(sub_file, index=False)
+```
+
+```{python}
+i=0
+for row in sub.itertuples():
+    if test_ids[i]!=row.ImageId:
+        i += 1
+    pixels = [int(p) for p in row.EncodedPixels.split(' ') if p != '']
+    if pixels !=[] and np.max(pixels)>sizes_test[i][0]*sizes_test[i][1]:
+        print(i, row.ImageId)
+```
+
+```{python}
+test_ids[0]
+```
+
+```{python}
+transform = transforms.ToPILImage()
+imshow(np.array(transform(img)))
+```
+
+```{python}
+with torch.no_grad():
+    masks = net(imgs.to(device)).to('cpu').numpy().squeeze()
+```
+
+```{python}
+imshow(masks[0].squeeze()>0.5)
+```
+
+```{python}
+imshow(preds[0])
+```
+
+```{python}
+new_test_ids = []
+rles = []
+somme = 0
+for n, id_ in enumerate(test_ids):
+    rle = list(prob_to_rles(preds_test_upsampled[n]))
+    rles.extend(rle)
+    somme += max(1, len(rle))
+    if rle==[]:
+        rles.append([])
+    new_test_ids.extend([id_] * max(1, len(rle)))
+print(somme)
+print(len(new_test_ids))
+```
+
+```{python}
+print(len([1 for id in new_test_ids if id=='c2f79bd23fe718679f75aa1ca0c7b9e509357d073e9dfe3ccb1028963183b123']))
+print(rles[0])
+```
+
+```{python}
+sub2 = pd.DataFrame()
+sub2['ImageId'] = ids
+sub2['EncodedPixels'] = pd.Series(rle).apply(lambda x: ' '.join(str(y) for y in x))
+```
+
+```{python}
+vals = [int(v) for val in sub2['EncodedPixels'].values for v in val.split(' ')]
+print(np.max(vals))
+```
+
+```{python}
+import PIL
+```
+
+```{python}
+i = train_ids[0]
+path = TRAIN_PATH
+img = imread(os.path.join(path, i, 'images', '{}.png'.format(i)))[:,:,:IMG_CHANNELS]
+img = resize(img, (IMG_HEIGHT, IMG_WIDTH), mode='constant', preserve_range=True)
+mask = np.zeros((1, IMG_HEIGHT, IMG_WIDTH), dtype=np.bool)
+mask_path = os.path.join(path, i, 'masks')
+for k, mask_file in enumerate(next(os.walk(mask_path))[2]):
+    mask_ = imread(os.path.join(mask_path, mask_file))
+    mask_ = np.expand_dims(resize(mask_, (IMG_HEIGHT, IMG_WIDTH), mode='constant', preserve_range=True), axis=0)
+    mask = np.maximum(mask, mask_.astype(np.int16)*(k+1))
+```
+
+```{python}
+i = train_ids[0]
+path = TRAIN_PATH
+img = imread(os.path.join(path, i, 'images', '{}.png'.format(i)))[:,:,:IMG_CHANNELS]
+img = resize(img, (IMG_HEIGHT, IMG_WIDTH), mode='constant', preserve_range=True)
+img = img/255
+imshow(img)
+plt.show()
+tmp = img[:, :, 0]
+img[:, :, 0] = img[:, :, 1]
+img[:, :, 1] = tmp
+imshow(img)
+plt.show()
+```
+
+```{python}
+pilimg = PIL.Image.fromarray(mask.squeeze())
+print(pilimg.getextrema())
+```
+
+```{python}
+
+```

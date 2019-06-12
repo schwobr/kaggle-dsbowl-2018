@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torchivsion.models import resnet
+from torchvision.models import resnet
 
 
 class ConvBnRelu(nn.Module):
@@ -91,7 +91,7 @@ class DoubleConv(nn.Module):
             out_channels, out_channels, kernel_size, stride=stride,
             padding=padding, bias=bias, **kwargs)
         self.up = nn.UpsamplingNearest2d(
-            scale_factor=scale_factor) if scale_factor else None
+            scale_factor=scale_factor) if scale_factor is not None else None
 
     def forward(self, x):
         x = self.conv1(x)
@@ -108,7 +108,7 @@ class UpConv(nn.Module):
         super(UpConv, self).__init__()
         self.conv = nn.Conv2d(
             in_channels, out_channels, kernel_size, stride=stride,
-            padding=padding, bias=bias, scale_factor=scale_factor, **kwargs)
+            padding=padding, bias=bias, **kwargs)
         self.up = nn.UpsamplingNearest2d(scale_factor=scale_factor)
 
     def forward(self, x, skip=None):
@@ -136,18 +136,18 @@ class Unet(nn.Module):
         self.encoder.layer2.register_forward_hook(hook)
         self.encoder.layer3.register_forward_hook(hook)
         self.encoder.layer4.register_forward_hook(hook)
-
+            
+        relu_param = list(encoder.conv1.parameters())[-1]
+        layer1_param = list(encoder.layer1.parameters())[-1]
+        layer2_param = list(encoder.layer1.parameters())[-1]
+        layer3_param = list(encoder.layer1.parameters())[-1]
+        layer4_param = list(encoder.layer1.parameters())[-1]
         self.upconvs = nn.ModuleList(
-            [UpConv(encoder.relu.parameters[-1].size(0),
-                    256, 1),
-             UpConv(encoder.layer1.parameters[-1].size(0),
-                    256, 1),
-             UpConv(encoder.layer2.parameters[-1].size(0),
-                    256, 1),
-             UpConv(encoder.layer3.parameters[-1].size(0),
-                    256, 1),
-             UpConv(encoder.layer4.parameters[-1].size(0),
-                    256, 1)][:: -1])
+            [UpConv(relu_param.size(0), 256, 1),
+             UpConv(layer1_param.size(0), 256, 1),
+             UpConv(layer2_param.size(0), 256, 1),
+             UpConv(layer3_param.size(0), 256, 1),
+             UpConv(layer4_param.size(0), 256, 1)][:: -1])
         self.doubleconvs = nn.ModuleList([
             DoubleConv(
                 256, 128, 3, padding=1, scale_factor=2 ** n)

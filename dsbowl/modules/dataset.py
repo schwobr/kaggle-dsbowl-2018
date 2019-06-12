@@ -1,6 +1,5 @@
 import os
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
 import torchvision.transforms.functional as TF
 import torch
 import cv2
@@ -32,10 +31,10 @@ class CellsDataset(Dataset):
     def __getitem__(self, idx):
         i = self.ids[idx]
         img_path, mask_path = self.__get_paths(i)
-        img = cv2.imread(img_path, cv2.IMREAD_COLOR)
-        mask = self.__get_mask(mask_path)
-        transformed = transforms(image=img, mask=mask)
-        return transformed['image'], transforms['mask']
+        img = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
+        mask = self.__get_mask(mask_path, img.shape[:2])
+        transformed = self.transforms(image=img, mask=mask)
+        return transformed['image'], transformed['mask']
 
     def __get_paths(self, i):
         if self.use_augs:
@@ -51,13 +50,13 @@ class CellsDataset(Dataset):
         else:
             img_path = self.path / str(i) / 'images' / f'{i}.png'
             mask_path = self.path / str(i) / 'masks'
-        return str(img_path), str(mask_path)
+        return img_path, mask_path
 
-    def __get_mask(self, mask_path, erosion=True, label=False):
-        mask = np.zeros(self.size, np.uint8)
+    def __get_mask(self, mask_path, size, erosion=True, label=False):
+        mask = np.zeros(size, np.uint8)
         for k, mask_file in enumerate(next(os.walk(mask_path))[2]):
             mask_ = cv2.imread(
-                mask_path / mask_file,
+                str(mask_path / mask_file),
                 cv2.IMREAD_UNCHANGED)
             if erosion:
                 mask_ = cv2.erode(
@@ -73,7 +72,7 @@ class CellsDataset(Dataset):
     def show(self, idx, show_mask=True, label=False):
         i = self.ids[idx]
         img_path, mask_path = self.__get_paths(self.ids[i])
-        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
         mask = self.__get_mask(mask_path, eorsion=False, label=label)
         plt.figure(0, (15, 15))
         if show_mask:
@@ -115,14 +114,14 @@ class Testset(Dataset):
     def __getitem__(self, idx):
         i = self.ids[idx]
         img_path = self.path / str(i) / 'images' / f'{i}.png'
-        img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
-        transformed = transforms(image=img)
+        img = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
+        transformed = self.transforms(image=img)
         return transformed['image']
 
     def show(self, idx):
         i = self.ids[idx]
         img_path = self.path / str(i) / 'images' / f'{i}.png'
-        img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
+        img = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
         plt.figure(0, (15, 15))
         plt.axis('off')
         plt.imshow(img)
@@ -160,7 +159,7 @@ def load_train_data(path, size=256, bs=8, val_split=0.2,
     return trainloader, valloader
 
 
-def load_test_data(path, size=1388, bs=8, transforms=transforms):
+def load_test_data(path, size=1388, bs=8, transforms=None):
     test_ids = next(os.walk(path))[1]
     testset = Testset(path, test_ids,
                       size=size, transforms=transforms)

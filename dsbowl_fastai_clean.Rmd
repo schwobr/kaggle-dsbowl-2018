@@ -154,7 +154,7 @@ def load_data(path, size=256, bs=8, val_split=0.2,
 ```
 
 ```{python}
-db = load_data(TRAIN_PATH, bs=BATCH_SIZE, normalize=(MEAN, STD))
+db = load_data(TRAIN_PATH, bs=BATCH_SIZE)
 ```
 
 ## Augment data
@@ -321,30 +321,376 @@ learner.recorder.plot()
 Best model is saved in a file whose name contains the main training parameters.
 
 ```{python}
-def getNextFilePath(output_folder):
+def getNextFilePath(output_folder, base_name):
     highest_num = 0
     for f in os.listdir(output_folder):
         if os.path.isfile(os.path.join(output_folder, f)):
             file_name = os.path.splitext(f)[0]
             try:
-                split = file_name.split('.')
-                split = split[0].split('_')
-                file_num = int(split[-1])
-                if file_num > highest_num:
-                    highest_num = file_num
+                if file_name.split('_')[:-1]==base_name.split('_'):
+                    split = file_name.split('.')
+                    split = split[-1].split('_')
+                    file_num = int(split[-1])
+                    if file_num > highest_num:
+                        highest_num = file_num
             except ValueError:
-                'The file name "%s" is not an integer. Skipping' % file_name
+                'The file name "%s" is incorrect. Skipping' % file_name
 
     output_file = highest_num + 1
     return output_file
 ```
 
 ```{python}
-save_name = f'{MODEL}_{EPOCHS}_{LR}_{WD}_{getNextFilePath(MODELS_PATH)}'
+save_name = f'{MODEL}_{EPOCHS}_{LR}_{WD}'
+save_name += f'_{getNextFilePath(MODELS_PATH, save_name)}'
 ```
 
 ```{python}
 learner.fit_one_cycle(EPOCHS, LR,callbacks=[SaveModelCallback(learner, monitor='mean_iou', name=save_name)])
+```
+
+## Predictions
+We can now predict on test set by loading the best model. But first, we need to load the testset. To do that I created a custom pytorch dataset that is for now overly complicated as I formerly used it for trainset as well.
+
+```{python}
+class CellsDataset(Dataset):
+    def __init__(self, path, ids, height=256, width=256, train=True,
+                 erosion=True, normalize=None, crop=True, resize=False,
+                 pad=False, grayscale=True, aug=True):
+        self.path = path
+        self.ids = ids
+        self.height = height
+        self.width = width
+        self.c = 1
+        self.erosion = erosion
+        self.normalize = normalize
+        self.resize = resize
+        self.crop = crop
+        self.grayscale = grayscale
+        self.train = train
+        self.aug = aug
+        self.pad = pad
+
+    def __len__(self):
+        return len(self.ids)
+
+    def __getitem__(self, idx):
+        ids = np.array(self.ids[idx], ndmin=1)
+        images = []
+        masks = []
+        sizes = []
+        for i in ids:
+            tfms = []
+            mask_tfms = []
+
+            if self.aug:
+                augs_path = os.path.join(self.path, i, 'augs')
+                spl = i.split('_')
+                if len(spl) == 1:
+                    img_path = os.path.join(
+                        self.path, i, 'images', f'{i}.png')
+                    mask_path = os.path.join(self.path, i, 'masks')
+                else:
+                    augs_path = os.path.join(self.path, spl[0], 'augs')
+                    img_path = os.path.join(augs_path, spl[1],
+                                            'images', f'{spl[1]}.png')
+                    mask_path = os.path.join(augs_path, spl[1], 'masks')
+            else:
+                img_path = os.path.join(self.path, i, 'images', f'{i}.png')
+                mask_path = os.path.join(self.path, i, 'masks')
+            img = imread(img_path)
+            try:
+                img.shape[2]
+            except IndexError:
+                img = np.expand_dims(img, axis=2)
+                img = np.concatenate((img, img, img), axis=2).astype(np.uint8)
+            sizes.append(torch.tensor(img.shape).unsqueeze(0))
+            img = PIL.Image.fromarray(img)
+
+            if self.grayscale:
+                tfms.append(transforms.Grayscale(3))
+
+            if self.crop:
+                i, j, th, tw = self.__get_crop(img)
+                crop = transforms.Lambda(lambda x: TF.crop(x, i, j, th, tw))
+                tfms.append(crop)
+                mask_tfms.append(crop)
+
+            if self.resize:
+                resize = transforms.Resize((self.height, self.width))
+                tfms.append(resize)
+                mask_tfms.append(resize)
+
+            if self.pad:
+                assert (self.train is False and self.width >= img.width
+                        and self.height >= img.height)
+                pad = transforms.Pad((0, 0, self.width-img.width,
+                                      self.height-img.height))
+                tfms.append(pad)
+
+            tfms.append(transforms.ToTensor())
+            mask_tfms.append(transforms.ToTensor())
+
+            if self.normalize:
+                tfms.append(transforms.Normalize(self.normalize[0],
+                                                 self.normalize[1]))
+
+            transform = transforms.Compose(tfms)
+            mask_transform = transforms.Compose(mask_tfms)
+            images.append(transform(img).unsqueeze(0))
+
+            if self.train:
+                masks.append(self.__get_mask(mask_path, mask_transform))
+
+        if self.train:
+            return torch.cat(images).squeeze(), torch.cat(masks)
+        else:
+            return torch.cat(images).squeeze(), torch.cat(sizes).squeeze()
+
+    def show(self, idx):
+        img = self.__getitem__(idx)
+        img = np.asarray(TF.to_pil_image(img))
+        imshow(img)
+        plt.show()
+        return img
+
+    def __get_crop(self, img):
+        w, h = img.size
+        th, tw = self.height, self.width
+        if w == tw and h == th:
+            return 0, 0, h, w
+
+        i = random.randint(0, h - th)
+        j = random.randint(0, w - tw)
+        return i, j, th, tw
+
+    def __get_mask(self, mask_path, transform):
+        mask = torch.zeros((self.height, self.width))
+        for mask_file in next(os.walk(mask_path))[2]:
+            mask_ = imread(os.path.join(mask_path, mask_file))
+            if self.erosion:
+                mask_ = cv2.erode(
+                    mask_.astype(np.uint8),
+                    np.ones((3, 3),
+                            np.uint8),
+                    iterations=1)
+            mask_ = PIL.Image.fromarray(mask_)
+            mask_ = transform(mask_)
+            mask = mask + mask_
+        return mask
+```
+
+```{python}
+test_ids = next(os.walk(TEST_PATH))[1]
+testset = CellsDataset(TEST_PATH, test_ids, height=MAX_HEIGHT, width=MAX_WIDTH,
+                       train=False, erosion=True, crop=False, resize=False, aug=False,
+                       pad=True)
+db = load_data(TRAIN_PATH, size=TRAIN_WIDTH, bs=BATCH_SIZE, testset=testset)
+```
+
+Now we check on our models and reload the learner with the completed databunch and the trained model.
+
+```{python}
+# !ls models
+```
+
+```{python}
+learner = unet_learner(db, models[MODEL], pretrained=False, metrics=[mean_iou],
+                       loss_func=nn.BCEWithLogitsLoss(), wd=WD, model_dir=MODELS_PATH)
+learner.load('resnet34_100_0.0002_0.1_1')
+```
+
+To make prediction, I use Test Time Augments (rotations+flip for now) on crops of the images that overlap. I then reconstruct the final mask using these results.
+
+```{python}
+def get_crops(img, size, overlap):
+    n, h, w = img.size()
+    n_h = max(1, ceil((h-size[0])/(size[0]-overlap)))
+    n_w = max(1, ceil((w-size[1])/(size[1]-overlap)))
+    crops = []
+    pos = []
+    overlaps = torch.zeros((h, w))
+    for i in range(n_h):
+        for j in range(n_w):
+            crop = torch.zeros((n, size[0], size[1]))
+            x_min = i*(size[0]-overlap)
+            y_min = j*(size[1]-overlap)
+            x_max = min(h, (i+1)*size[0]-i*overlap)
+            y_max = min(w, (j+1)*size[1]-j*overlap)
+            crop[:, :x_max-x_min, :y_max-y_min] = img[:, x_min:x_max,
+                                                      y_min:y_max]
+            crops.append(crop)
+            overlaps[x_min:x_max, y_min:y_max] += 1
+            pos.append(((x_min, y_min), (x_max, y_max)))
+    return crops, pos, overlaps
+```
+
+```{python}
+def predict_TTA(learner, img, size, rotations, device):
+    flipped = TF.hflip(img)
+    res = torch.zeros(size)
+    for angle in rotations:
+        rot = TF.rotate(img, angle)
+        rot = TF.to_tensor(rot).unsqueeze(0).to(device)
+        rot_flipped = TF.rotate(flipped, angle)
+        rot_flipped = TF.to_tensor(rot_flipped).unsqueeze(0).to(device)
+
+        out_rot = learner.model(rot).cpu().squeeze()
+        out_rot = torch.sigmoid(out_rot).squeeze()
+        out_rot = TF.rotate(TF.to_pil_image(out_rot), -angle)
+        out_rot = TF.to_tensor(out_rot).squeeze()
+
+        out_flipped = learner.model(rot_flipped).cpu().squeeze()
+        out_flipped = torch.sigmoid(out_flipped).squeeze()
+        out_flipped = TF.hflip(TF.rotate(TF.to_pil_image(out_flipped), -angle))
+        out_flipped = TF.to_tensor(out_flipped).squeeze()
+
+        res += (out_rot+out_flipped)/2
+    res /= len(rotations)
+    return res
+```
+
+```{python}
+def predict_TTA_all(learner, size=(512, 512), overlap=64,
+                    rotations=(0, 90, 180, 270), device='cuda:0'):
+    preds = []
+    sizes = []
+    with torch.no_grad():
+        for X_test, sizes_test in tqdm(learner.dl(DatasetType.Test)):
+            sizes.append(sizes_test)
+            for tens, s in zip(X_test, sizes_test):
+                crops, pos, overlaps = get_crops(tens.cpu()[:, :s[0], :s[1]],
+                                                 size, overlap)
+                pred = torch.zeros((s[0], s[1]))
+                for crop, ((x_min, y_min), (x_max, y_max)) in zip(crops, pos):
+                    img = TF.to_pil_image(crop)
+                    res = predict_TTA(learner, img, size, rotations, device)
+                    pred[x_min:x_max, y_min:y_max] += res[
+                        :x_max-x_min, :y_max-y_min]
+                pred /= overlaps
+                preds.append(pred.numpy())
+    sizes = torch.cat(sizes).cpu().numpy().squeeze()
+    return preds, sizes
+```
+
+```{python}
+preds, sizes = predict_TTA_all(learner, size=(TEST_HEIGHT, TEST_WIDTH), overlap=TEST_OVERLAP, device=device)
+```
+
+We then create the submission file using rle encoding
+
+```{python}
+def rle_encoding(x):
+    dots = np.where(x.T.flatten() == 1)[0]
+    run_lengths = []
+    prev = -2
+    for b in dots:
+        if (b > prev+1):
+            run_lengths.extend((b + 1, 0))
+        run_lengths[-1] += 1
+        prev = b
+    return run_lengths
+
+
+def prob_to_rles(x, cutoff=0.5):
+    lab_img = label(x > cutoff)
+    mask = np.zeros_like(lab_img)
+    for i in range(1, lab_img.max() + 1):
+        img = ((lab_img == i).astype(np.uint8) * 255)
+        img = cv2.dilate(img, np.ones((3, 3), np.uint8),
+                         iterations=1).astype('float32')/255
+        mask[img > cutoff] = i
+    for i in range(1, mask.max() + 1):
+        yield rle_encoding(mask == i)
+```
+
+```{python}
+def create_submission(preds, sizes, test_ids, folder, resize=False):
+    if resize:
+        preds_test_upsampled = []
+        for i, pred in enumerate(preds):
+            preds_test_upsampled.append(resize(
+                                        pred, (sizes[i, 0], sizes[i, 1]),
+                                        mode='constant', preserve_range=True))
+    else:
+        preds_test_upsampled = preds
+    new_test_ids = []
+    rles = []
+    for n, id_ in enumerate(tqdm(test_ids)):
+        rle = list(prob_to_rles(preds_test_upsampled[n]))
+        rles.extend(rle)
+        if rle == []:
+            rles.append([])
+        new_test_ids.extend([id_] * max(1, len(rle)))
+
+    sub = pd.DataFrame()
+    sub['ImageId'] = new_test_ids
+    sub['EncodedPixels'] = pd.Series(rles).apply(
+        lambda x: ' '.join(str(y) for y in x))
+
+    sub_file = os.path.join(folder,
+                            f'sub_dsbowl_pt_{getNextFilePath(folder, "sub_dsbowl_pt")}.csv')
+    sub.to_csv(sub_file, index=False)
+```
+
+```{python}
+create_submission(preds, sizes, test_ids, SUB_PATH)
+```
+
+Once this is done, we can check four our latest submission and upload it on kaggle
+
+```{python}
+# !ls submissions
+```
+
+```{python}
+# !kaggle competitions submit data-science-bowl-2018 -f submissions/sub_dsbowl_pt_23.csv -m "Message"
+```
+
+```{python}
+def read_rle(file, i):
+    df = pd.read_csv(file)
+    rles = df.loc[df['ImageId']==i, 'EncodedPixels']
+    img = cv2.imread(os.path.join(TEST_PATH, i, 'images', f'{i}.png'), cv2.IMREAD_COLOR)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    mask = np.zeros(img.shape[:2])
+    for index, rle in rles.items():
+        rle = list(map(int, rle.split(' ')))
+        for k in range(0, len(rle), 2):
+            for p in range(rle[k], rle[k]+rle[k+1]):
+                x = (p-1)%mask.shape[0]
+                y = (p-1)//mask.shape[0]
+                mask[x, y] = index+1
+    return img, mask
+```
+
+```{python}
+def norm_stand(img):
+    img_nonull = np.where(img>0, img, np.nan)
+    img = img/255
+    img = (img-np.mean(img))/np.std(img)
+    imax = np.max(img)
+    imin = np.min(img)
+    print(np.mean(img))
+    return (img-imin)/(imax-imin)
+```
+
+```{python}
+img, mask = read_rle(os.path.join(SUB_PATH, 'sub_dsbowl_pt_19.csv'), test_ids[0])
+```
+
+```{python}
+from matplotlib.colors import ListedColormap
+null_img = np.where(img>0, 1, 0)
+f = plt.figure(num=0, figsize=(15,15))
+rand_cmap = ListedColormap(np.random.rand(256,3))
+rand_cmap.set_bad(color='black')
+plt.subplot(121)
+plt.axis('off')
+plt.imshow(img, cmap='gray')
+plt.subplot(122)
+plt.axis('off')
+plt.imshow(np.where(mask>0, mask, np.nan), cmap=rand_cmap)
 ```
 
 ```{python}

@@ -1,4 +1,4 @@
-from unets import Unet
+from modules.unets import Unet
 from torchvision.models import (
     resnet18, resnet34, resnet50, resnet101, resnet152)
 

@@ -253,20 +253,20 @@ class ToTensor(DualTransform):
 
 
 def get_train_tfms(size):
-    return Compose(ToGray(),
+    return Compose([ToGray(),
                    RandomCrop(size),
                    FixMask(),
-                   ToTensor())
+                   ToTensor()])
 
 
 def get_test_tfms(size):
-    return Compose(ToGray(),
+    return Compose([ToGray(),
                    ExtendPad(size),
-                   ToTensor())
+                   ToTensor()])
 
 
 def get_basics(size):
-    return Compose(ToGray(),
+    return Compose([ToGray(),
                    ResizePad(size),
                    FixMask(),
-                   ToTensor())
+                   ToTensor()])

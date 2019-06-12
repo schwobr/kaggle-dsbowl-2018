@@ -15,7 +15,7 @@ TEST_PATH = PROJECT_PATH/'data/stage2_test_final/'
 MODELS_PATH = PROJECT_PATH/'models/'
 SUB_PATH = PROJECT_PATH/'submissions/'
 TRAIN_CSV = PROJECT_PATH/'stage1_train.csv'
-TEST_CSV = PROJECT_PATH/'stage2_test.csv'
+TEST_CSV = PROJECT_PATH/'stage2_test_final.csv'
 
 # NORMALIZE
 MEAN = (0.5, 0.5, 0.5)

@@ -4,7 +4,7 @@ import time
 import math
 import torch
 from numbers import Number
-import annealings as an
+import modules.annealings as an
 from modules.preds import predict_all, predict_TTA_all
 
 
@@ -23,17 +23,18 @@ class Net:
             self, dls, num_epochs, save_name, device, state_dict=None,
             scheduler=None):
         since = time.time()
-        if scheduler:
+        if scheduler is not None:
             scheduler = scheduler(self.optim, num_epochs)
         else:
             scheduler = Scheduler(self.optim, num_epochs)
 
         val_acc_history = []
 
-        if state_dict:
+        if state_dict is not None:
             self.load(self.models_dir / state_dict)
         best_acc = 0
-
+        
+        self.model.to(device)
         for epoch in range(num_epochs):
             epoch_start = time.time()
             for phase in ['train', 'val']:
@@ -143,7 +144,6 @@ class Scheduler:
         self.optim = optim
         self.n_epochs = None
         self.last_step = last_step
-        self.step(last_step)
         self.step_on_batch = step_on_batch
 
     def __call__(self, optim, n_epochs):
@@ -155,8 +155,8 @@ class Scheduler:
         return [group['lr'] for group in self.optim.param_groups]
 
     def step(self, epoch=None):
-        assert self.optim, 'An optimizer must be specified'
-        assert self.n_epochs, 'A number of epochs must be specified'
+        assert self.optim is not None, 'An optimizer must be specified'
+        assert self.n_epochs is not None, 'A number of epochs must be specified'
         if epoch is None:
             epoch = self.last_step + 1
         self.last_step = epoch
@@ -170,16 +170,26 @@ class OneCycleScheduler(Scheduler):
             pct_start=0.3, final_div=1e4, bs=8, **kwargs):
         super().__init__(step_on_batch=True, **kwargs)
         if isinstance(lr_max, Number):
-            lr_max = [lr_max for _ in self.optim.param_groups]
+            lr_max = [lr_max]
+        if self.optim is not None:
+            lr_max *= len(self.optim.param_groups)
         self.lr_max = lr_max
         self.lr_min = [lr/div_factor for lr in lr_max]
         self.mom_max = moms[0]
         self.mom_min = moms[1]
         self.final_div = final_div
-        n = math.ceil(train_len/bs)*self.n_epochs
+        n = math.ceil(train_len/bs)
         self.a1 = pct_start*n
         self.a2 = n-self.a1
-
+    
+    def __call__(self, optim, n_epochs):
+        super().__call__(optim, n_epochs)
+        self.lr_max *= len(optim.param_groups)
+        self.lr_min *= len(optim.param_groups)
+        self.a1 *= n_epochs
+        self.a2 *= n_epochs
+        return self
+    
     def get_lr(self):
         if self.last_step <= self.a1:
             return [an.annealing_cos(

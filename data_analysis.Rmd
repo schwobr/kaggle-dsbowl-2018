@@ -1,0 +1,159 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.1'
+      jupytext_version: 1.1.3
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+# %matplotlib inline
+import os
+import sys
+import random
+import warnings
+import time
+import copy
+
+from math import ceil
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import cv2
+import PIL
+
+import matplotlib.pyplot as plt
+
+from tqdm import tqdm_notebook as tqdm
+from itertools import chain
+from skimage.io import imread, imshow, imread_collection, concatenate_images
+from skimage.transform import resize
+from skimage.morphology import label
+
+PROJECT_PATH = '/work/stages/schwob/data-science-bowl-2018/kaggle-dsbowl-2018/'
+TRAIN_PATH = 'data/stage1_train/'
+TEST_PATH = 'data/stage2_test_final/'
+```
+
+```{python}
+train_ids = next(os.walk(TRAIN_PATH))[1]
+test_ids = next(os.walk(TEST_PATH))[1]
+```
+
+```{python}
+def open_image(i, train=True):
+    path = TRAIN_PATH + str(i)
+    img = imread(os.path.join(path, 'images', f'{i}.png'))
+    if train:
+        mask = np.zeros(img.shape[:2])
+        mask_path = os.path.join(path, 'masks')
+        contours = np.zeros_like(mask)
+        for k, mask_file in enumerate(next(os.walk(mask_path))[2]):
+            mask_ = imread(os.path.join(mask_path, mask_file))/255
+            contour, hierarchy = cv2.findContours(mask_.astype(np.int32), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+            contours = cv2.drawContours(contours, contour, -1, (255, 255, 255))
+            mask += mask_*(k+1)
+        return img, mask, contours
+    return img
+```
+
+```{python}
+img, mask, contours = open_image(train_ids[0])
+```
+
+```{python}
+from matplotlib.colors import ListedColormap
+
+def plot_images(ids):
+    """Plot image_rows*image_cols of selected images. Used to visualy check clusterization"""
+    f = plt.figure(num=0, figsize=(15,15))
+    rand_cmap = ListedColormap(np.random.rand(256,3))
+    rand_cmap.set_bad(color='black')
+    for k, i in enumerate(ids):
+        img, mask, contours = open_image(i)
+        plt.subplot(len(ids), 3, 3*k+1)
+        plt.axis('off')
+        plt.imshow(img)
+        plt.subplot(len(ids), 3, 3*k+2)
+        plt.axis('off')
+        plt.imshow(np.where(mask>0, mask, np.nan), cmap=rand_cmap)
+        plt.subplot(len(ids), 3, 3*k+3)
+        plt.axis('off')
+        plt.imshow(contours, cmap='gray')
+    plt.tight_layout()
+    plt.show()
+```
+
+```{python}
+plot_images(train_ids[5:6])
+```
+
+```{python}
+f = plt.figure(num=0, figsize=(15,15))
+rand_cmap = ListedColormap(np.random.rand(256,3))
+rand_cmap.set_bad(color='black')
+plt.subplot(121)
+plt.axis('off')
+plt.imshow(mask>0, cmap='gray')
+plt.subplot(122)
+plt.axis('off')
+plt.imshow(np.where(mask>0, mask, np.nan), cmap=rand_cmap)
+```
+
+```{python}
+def get_augs(i):
+    path = os.path.join(TRAIN_PATH, i, 'augs')
+    for j in next(os.walk(path))[1]:
+        yield imread(os.path.join(path, j, 'images', f'{j}.png'))
+```
+
+```{python}
+augs = list(get_augs(train_ids[5]))
+```
+
+```{python}
+f = plt.figure(num=0, figsize=(10,10))
+plt.subplot(141)
+plt.axis('off')
+plt.imshow(img)
+for k, aug in enumerate(augs[:3]):
+    plt.subplot(1, 4, k+2)
+    plt.axis('off')
+    plt.imshow(aug)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+imshow(contours/255)
+```
+
+```{python}
+i = test_ids[2]
+print(i)
+path = TEST_PATH + str(i)
+img = cv2.imread(os.path.join(path, 'images', f'{i}.png'), cv2.IMREAD_COLOR)
+```
+
+```{python}
+test = img
+test=cv2.cvtColor(test, cv2.COLOR_BGR2RGB)
+plt.imshow(img[:, :, 0])
+plt.show()
+plt.imshow(test)
+plt.show()
+```
+
+```{python}
+
+```
+
+```{python}
+
+```

@@ -42,6 +42,7 @@ def create_csv(dir_path, save_path):
     name = dir_path.name
     df = pd.DataFrame(columns=['ImageId', 'Path',
                                'Height', 'Width', 'Channels'])
+    print(f'Creating csv for {dir_path}...')
     for k, i in enumerate(next(os.walk(dir_path))[1]):
         path = dir_path / str(i) / 'images' / f'{i}.png'
         img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)

@@ -39,7 +39,7 @@ class ConvRelu(nn.Module):
 
 class DecoderBlock(nn.Module):
     def __init__(
-            self, in_channels, out_channels, kernel_size, stride=1,
+            self, in_channels, mid_channels, out_channels, kernel_size, stride=1,
             padding=0, bias=True, **kwargs):
         super(DecoderBlock, self).__init__()
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
@@ -47,20 +47,20 @@ class DecoderBlock(nn.Module):
             in_channels, out_channels, kernel_size, stride=stride,
             padding=padding, bias=bias, **kwargs)
         self.conv2 = ConvRelu(
-            out_channels, out_channels, kernel_size, stride=stride,
+            mid_channels, out_channels, kernel_size, stride=stride,
             padding=padding, bias=bias, **kwargs)
 
     def forward(self, x, skip):
         x = self.up(x)
         x = self.conv1(x)
-        x = torch.cat([x, skip], axis=-1)
+        x = torch.cat([x, skip], dim=1)
         x = self.conv2(x)
         return x
 
 
 class DecoderBlockBn(nn.Module):
     def __init__(
-            self, in_channels, out_channels, kernel_size, stride=1,
+            self, in_channels, mid_channels, out_channels, kernel_size, stride=1,
             padding=0, bias=True, **kwargs):
         super(DecoderBlock, self).__init__()
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
@@ -68,13 +68,13 @@ class DecoderBlockBn(nn.Module):
             in_channels, out_channels, kernel_size, stride=stride,
             padding=padding, bias=bias, **kwargs)
         self.conv2 = ConvBnRelu(
-            out_channels, out_channels, kernel_size, stride=stride,
+            mid_channels, out_channels, kernel_size, stride=stride,
             padding=padding, bias=bias, **kwargs)
 
     def forward(self, x, skip):
         x = self.up(x)
         x = self.conv1(x)
-        x = torch.cat([x, skip], axis=-1)
+        x = torch.cat([x, skip], dim=1)
         x = self.conv2(x)
         return x
 
@@ -96,7 +96,7 @@ class DoubleConv(nn.Module):
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
-        if self.up:
+        if self.up is not None:
             x = self.up(x)
         return x
 
@@ -113,9 +113,8 @@ class UpConv(nn.Module):
 
     def forward(self, x, skip=None):
         x = self.conv(x)
-        if skip:
-            x += skip
-        x = self.up(x)
+        if skip is not None:
+            x += self.up(skip)
         return x
 
 
@@ -139,15 +138,16 @@ class Unet(nn.Module):
             
         relu_param = list(encoder.conv1.parameters())[-1]
         layer1_param = list(encoder.layer1.parameters())[-1]
-        layer2_param = list(encoder.layer1.parameters())[-1]
-        layer3_param = list(encoder.layer1.parameters())[-1]
-        layer4_param = list(encoder.layer1.parameters())[-1]
+        layer2_param = list(encoder.layer2.parameters())[-1]
+        layer3_param = list(encoder.layer3.parameters())[-1]
+        layer4_param = list(encoder.layer4.parameters())[-1]
         self.upconvs = nn.ModuleList(
             [UpConv(relu_param.size(0), 256, 1),
              UpConv(layer1_param.size(0), 256, 1),
              UpConv(layer2_param.size(0), 256, 1),
              UpConv(layer3_param.size(0), 256, 1),
              UpConv(layer4_param.size(0), 256, 1)][:: -1])
+        
         self.doubleconvs = nn.ModuleList([
             DoubleConv(
                 256, 128, 3, padding=1, scale_factor=2 ** n)
@@ -155,7 +155,7 @@ class Unet(nn.Module):
         self.doubleconvs.append(DoubleConv(256, 128, 3, padding=1))
 
         self.aggregate = ConvBnRelu(512, 256, 3, padding=1)
-        self.decode = DecoderBlock(256, 128, 3, padding=1)
+        self.decode = DecoderBlock(256, 128+relu_param.size(0), 128, 3, padding=1)
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
         self.doubleconv = DoubleConv(128, 64, 3, padding=1)
         self.activation = get_activation(act, 64, n_classes)
@@ -170,12 +170,13 @@ class Unet(nn.Module):
             if k < 4:
                 doubleconv = self.doubleconvs[k]
                 ps.append(doubleconv(p))
-        x = torch.cat(ps)
+        x = torch.cat(ps, dim=1)
         x = self.aggregate(x)
         x = self.decode(x, self.outputs[0])
         x = self.up(x)
         x = self.doubleconv(x)
         x = self.activation(x)
+        self.outputs = []
         return x
 
 

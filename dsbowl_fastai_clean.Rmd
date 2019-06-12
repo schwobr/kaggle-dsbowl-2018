@@ -694,5 +694,13 @@ plt.imshow(np.where(mask>0, mask, np.nan), cmap=rand_cmap)
 ```
 
 ```{python}
+from torchvision.models.resnet import resnet50
+```
+
+```{python}
+print(resnet50(pretrained=False))
+```
+
+```{python}
 
 ```

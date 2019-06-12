@@ -3,6 +3,7 @@ from datetime import timedelta
 import time
 import math
 import torch
+import numpy as np
 from numbers import Number
 import modules.annealings as an
 from modules.preds import predict_all, predict_TTA_all
@@ -33,7 +34,6 @@ class Net:
         if state_dict is not None:
             self.load(self.models_dir / state_dict)
         best_acc = 0
-        
         self.model.to(device)
         for epoch in range(num_epochs):
             epoch_start = time.time()
@@ -71,9 +71,9 @@ class Net:
                                     scheduler.step()
 
                         running_loss += loss.item()
-                        acc = torch.mean([(metric(target, output)
-                                           for metric in self.metrics)])
-                        running_acc += acc.item()
+                        acc = np.mean([metric(target, output).item()\
+                                           for metric in self.metrics])
+                        running_acc += acc
                         k += 1
                         t.postfix["loss"] = running_loss/k
                         t.postfix["acc"] = running_acc/k
@@ -212,5 +212,5 @@ class OneCycleScheduler(Scheduler):
     def step(self, epoch=None):
         super().step(epoch)
         mom = self.get_mom()
-        for param_group in self.optim.param_groups, self.get_lr():
+        for param_group in self.optim.param_groups:
             param_group['momentum'] = mom

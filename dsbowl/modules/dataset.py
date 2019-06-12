@@ -32,7 +32,7 @@ class CellsDataset(Dataset):
     def __getitem__(self, idx):
         i = self.ids[idx]
         img_path, mask_path = self.__get_paths(i)
-        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        img = cv2.imread(img_path, cv2.IMREAD_COLOR)
         mask = self.__get_mask(mask_path)
         transformed = transforms(image=img, mask=mask)
         return transformed['image'], transforms['mask']
@@ -160,7 +160,7 @@ def load_train_data(path, size=256, bs=8, val_split=0.2,
     return trainloader, valloader
 
 
-def load_test_data(path, size=256, bs=8, transforms=transforms):
+def load_test_data(path, size=1388, bs=8, transforms=transforms):
     test_ids = next(os.walk(path))[1]
     testset = Testset(path, test_ids,
                       size=size, transforms=transforms)

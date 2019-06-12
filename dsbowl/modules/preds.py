@@ -3,42 +3,48 @@ import pandas as pd
 import cv2
 
 from math import ceil
+from numbers import Number
 
 from tqdm.autonotebook import tqdm
 from skimage.morphology import label
 
 import torch
-import torchvision.transforms.functional as TF
 
 from modules.files import getNextFilePath
-from modules.transforms_functional import tensor_to_img
+import modules.transforms_functional as F
 
 
 def predict_all(model, dl):
     preds = []
     with torch.no_grad():
-        for X_test, sizes_test in tqdm(dl):
+        for X_test in tqdm(dl):
             preds.append(model(X_test).cpu())
     preds = torch.cat(preds)
     return preds
 
 
-def predict_TTA_all(model, dl, device, size=(512, 512), overlap=64,
-                    rotations=(0, 90, 180, 270)):
+def predict_TTA_all(model, dl, device, sizes, size=512, overlap=64,
+                    out_channels=1, rotations=(0, 90, 180, 270)):
+    if isinstance(size, Number):
+        size = (size, size)
     preds = []
+    k = 0
     with torch.no_grad():
-        for X_test, sizes_test in tqdm(dl):
-            for tens, s in zip(X_test, sizes_test):
+        for X_test in tqdm(dl):
+            for tens in X_test:
+                s = sizes[k]
                 crops, pos, overlaps = get_crops(tens.cpu()[:, :s[0], :s[1]],
                                                  size, overlap)
-                pred = torch.zeros((1, s[0], s[1]))
+                pred = torch.zeros((out_channels, *s))
                 for crop, ((x_min, y_min), (x_max, y_max)) in zip(crops, pos):
-                    img = TF.to_pil_image(crop)
-                    res = predict_TTA(model, img, size, rotations, device)
+                    img = F.tensor_to_img(crop)
+                    res = predict_TTA(model, img, size,
+                                      rotations, device, out_channels)
                     pred[:, x_min:x_max, y_min:y_max] += res[
-                         :, :x_max-x_min, :y_max-y_min]
+                        :, :x_max-x_min, :y_max-y_min]
                 pred /= overlaps
                 preds.append(pred)
+                k += 1
     return torch.cat(preds)
 
 
@@ -64,26 +70,24 @@ def get_crops(img, size, overlap):
     return crops, pos, overlaps
 
 
-def predict_TTA(model, img, size, rotations, device):
-    flipped = TF.hflip(img)
-    res = torch.zeros(size).unsqueeze(0)
+def predict_TTA(model, img, size, rotations, device, out_channels):
+    flipped = F.hflip(img)
+    res = torch.zeros((out_channels, *size))
+
     for angle in rotations:
-        rot = TF.rotate(img, angle)
-        rot = TF.to_tensor(rot).to(device)
-        rot_flipped = TF.rotate(flipped, angle)
-        rot_flipped = TF.to_tensor(rot_flipped).to(device)
+        rot = F.rotate(img, angle)
+        rot = F.img_to_tensor(rot).to(device)
+        rot_flipped = F.rotate(flipped, angle)
+        rot_flipped = F.img_to_tensor(rot_flipped).to(device)
 
         out_rot = model(rot).cpu()
-        out_rot = torch.sigmoid(out_rot)
-        out_rot = TF.rotate(TF.to_pil_image(out_rot), -angle)
-        out_rot = TF.to_tensor(out_rot)
+        out_rot = F.rotate(F.tensor_to_img(out_rot), -angle)
+        out_rot = F.img_to_tensor(out_rot)
 
         out_flipped = model(rot_flipped).cpu()
-        out_flipped = torch.sigmoid(out_flipped)
-        out_flipped = TF.hflip(
-            TF.rotate(TF.to_pil_image(out_flipped), -angle))
-        out_flipped = TF.to_tensor(out_flipped)
-
+        out_flipped = F.hflip(
+            F.rotate(F.tensor_to_img(out_flipped), -angle))
+        out_flipped = F.img_to_tensor(out_flipped)
         res += (out_rot+out_flipped)/2
     res /= len(rotations)
     return res
@@ -118,11 +122,11 @@ def create_submission(preds, sizes, test_ids, folder, resize=False):
     if resize:
         preds_test_upsampled = []
         for i, pred in enumerate(preds):
-            pred = tensor_to_img(pred)
+            pred = F.tensor_to_img(pred)
             preds_test_upsampled.append(cv2.resize(
                                         pred, (sizes[i, 0], sizes[i, 1])))
     else:
-        preds_test_upsampled = [tensor_to_img(pred) for pred in preds]
+        preds_test_upsampled = [F.tensor_to_img(pred) for pred in preds]
     new_test_ids = []
     rles = []
     for n, id_ in enumerate(tqdm(test_ids)):

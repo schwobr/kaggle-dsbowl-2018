@@ -151,6 +151,26 @@ class Pad(DualTransform):
         return self.params
 
 
+class ExtendPad(DualTransform):
+    def __init__(self, size, mode='constant', prob=1., **kwargs):
+        super().__init__(prob)
+        self.size = size
+        self.mode = mode
+        self.params = kwargs
+
+    def apply(self, img, **params):
+        assert self.size[0] > img.shape[0] and self.size[1] > img.shape[1],\
+            'Image must be smaller than specified size'
+        pad_width = (
+            (0, self.size[0] - img.shape[0]),
+            (0, self.size[1] - img.shape[1]),
+            (0, 0))
+        return F.pad(img, pad_width, self.mode, **params)
+
+    def get_params(self):
+        return self.params
+
+
 class ResizePad(DualTransform):
     def __init__(self, size, pad_width, mode='constant', prob=1., **kwargs):
         super().__init__(prob)
@@ -233,9 +253,15 @@ class ToTensor(DualTransform):
 
 
 def get_train_tfms(size):
-    return Compose(ToThreeChannelGray(),
+    return Compose(ToGray(),
                    RandomCrop(size),
                    FixMask(),
+                   ToTensor())
+
+
+def get_test_tfms(size):
+    return Compose(ToGray(),
+                   ExtendPad(size),
                    ToTensor())
 
 

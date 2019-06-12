@@ -31,7 +31,7 @@ class Net:
         val_acc_history = []
 
         if state_dict:
-            self.model.load_state_dict(self.models_dir / state_dict)
+            self.load(self.models_dir / state_dict)
         best_acc = 0
 
         for epoch in range(num_epochs):
@@ -83,7 +83,7 @@ class Net:
 
                 if phase == 'val' and epoch_acc > best_acc:
                     best_acc = epoch_acc
-                    self.model.save(self.models_dir / save_name)
+                    self.save(self.models_dir / save_name)
                     time_elapsed = time.time()-epoch_start
                     print((f'{epoch+1}/{num_epochs} Loss: {epoch_loss:.4f} '
                            f'Acc: {epoch_acc:.4f} '
@@ -101,7 +101,7 @@ class Net:
         print(f'Best val Acc: {best_acc:4f}')
 
         # load best model weights
-        self.model.load_state_dict(torch.load(self.models_dir / save_name))
+        self.load(self.models_dir / save_name)
         return self.model, val_acc_history
 
     def score(self, dl, device):
@@ -123,11 +123,17 @@ class Net:
         print('; '.join(s))
         return loss_tot, metrics_tot
 
-    def predict(self, dl, device, TTA=True, **kwargs):
+    def predict(self, dl, device, sizes, TTA=True, **kwargs):
         if TTA:
-            return predict_TTA_all(self.model, dl, device, **kwargs)
+            return predict_TTA_all(self.model, dl, device, sizes, **kwargs)
         else:
             return predict_all(self.model, dl)
+
+    def load(self, model):
+        self.model.load_state_dict(torch.load(model))
+
+    def save(self, path):
+        torch.save(self.model.state_dict(), path)
 
 
 class Scheduler:

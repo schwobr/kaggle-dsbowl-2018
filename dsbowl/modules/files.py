@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import cv2
+import numpy as np
 
 
 def getNextId(output_folder):
@@ -51,3 +52,11 @@ def create_csv(dir_path, save_path):
             c = 1
         df.loc[k] = [i, str(path), h, w, c]
     df.to_csv(save_path / f'{name}.csv')
+
+
+def get_sizes(file, ids):
+    df = pd.read_csv(file, index_col=0)
+    sizes = np.zeros((len(ids), 2))
+    for k, i in enumerate(ids):
+        sizes[k, :] = df.loc[df['ImageId'] == i, 'Height':'Width']
+    return sizes

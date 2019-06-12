@@ -39,8 +39,8 @@ class ConvRelu(nn.Module):
 
 class DecoderBlock(nn.Module):
     def __init__(
-            self, in_channels, mid_channels, out_channels, kernel_size, stride=1,
-            padding=0, bias=True, **kwargs):
+            self, in_channels, mid_channels, out_channels, kernel_size,
+            stride=1, padding=0, bias=True, **kwargs):
         super(DecoderBlock, self).__init__()
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
         self.conv1 = ConvRelu(
@@ -60,8 +60,8 @@ class DecoderBlock(nn.Module):
 
 class DecoderBlockBn(nn.Module):
     def __init__(
-            self, in_channels, mid_channels, out_channels, kernel_size, stride=1,
-            padding=0, bias=True, **kwargs):
+            self, in_channels, mid_channels, out_channels, kernel_size,
+            stride=1, padding=0, bias=True, **kwargs):
         super(DecoderBlock, self).__init__()
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
         self.conv1 = ConvBnRelu(
@@ -135,7 +135,7 @@ class Unet(nn.Module):
         self.encoder.layer2.register_forward_hook(hook)
         self.encoder.layer3.register_forward_hook(hook)
         self.encoder.layer4.register_forward_hook(hook)
-            
+
         relu_param = list(encoder.conv1.parameters())[-1]
         layer1_param = list(encoder.layer1.parameters())[-1]
         layer2_param = list(encoder.layer2.parameters())[-1]
@@ -147,7 +147,7 @@ class Unet(nn.Module):
              UpConv(layer2_param.size(0), 256, 1),
              UpConv(layer3_param.size(0), 256, 1),
              UpConv(layer4_param.size(0), 256, 1)][:: -1])
-        
+
         self.doubleconvs = nn.ModuleList([
             DoubleConv(
                 256, 128, 3, padding=1, scale_factor=2 ** n)
@@ -155,7 +155,9 @@ class Unet(nn.Module):
         self.doubleconvs.append(DoubleConv(256, 128, 3, padding=1))
 
         self.aggregate = ConvBnRelu(512, 256, 3, padding=1)
-        self.decode = DecoderBlock(256, 128+relu_param.size(0), 128, 3, padding=1)
+        self.decode = DecoderBlock(
+            256, 128 + relu_param.size(0),
+            128, 3, padding=1)
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
         self.doubleconv = DoubleConv(128, 64, 3, padding=1)
         self.activation = get_activation(act, 64, n_classes)

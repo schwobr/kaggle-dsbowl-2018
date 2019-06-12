@@ -71,8 +71,8 @@ class Net:
                                     scheduler.step()
 
                         running_loss += loss.item()
-                        acc = np.mean([metric(target, output).item()\
-                                           for metric in self.metrics])
+                        acc = np.mean([metric(target, output).item()
+                                       for metric in self.metrics])
                         running_acc += acc
                         k += 1
                         t.postfix["loss"] = running_loss/k
@@ -156,7 +156,8 @@ class Scheduler:
 
     def step(self, epoch=None):
         assert self.optim is not None, 'An optimizer must be specified'
-        assert self.n_epochs is not None, 'A number of epochs must be specified'
+        assert self.n_epochs is not None,\
+            'A number of epochs must be specified'
         if epoch is None:
             epoch = self.last_step + 1
         self.last_step = epoch
@@ -181,7 +182,7 @@ class OneCycleScheduler(Scheduler):
         n = math.ceil(train_len/bs)
         self.a1 = pct_start*n
         self.a2 = n-self.a1
-    
+
     def __call__(self, optim, n_epochs):
         super().__call__(optim, n_epochs)
         self.lr_max *= len(optim.param_groups)
@@ -189,7 +190,7 @@ class OneCycleScheduler(Scheduler):
         self.a1 *= n_epochs
         self.a2 *= n_epochs
         return self
-    
+
     def get_lr(self):
         if self.last_step <= self.a1:
             return [an.annealing_cos(

@@ -50,10 +50,12 @@ class Net:
                 with tqdm(dls[phase],
                           desc=f'epoch {epoch+1}/{num_epochs}: {phase}',
                           postfix={1: 0, 'loss': 0, 'acc': 0},
-                          bar_format=('{n}/|/{l_bar}| {n_fmt}/{total_fmt}'
-                                      ' [{elapsed}<{remaining}, {rate_fmt}], '
-                                      'loss: {postfix[loss]}, '
-                                      'acc: {postfix[acc]}')) as t:
+                          bar_format=''.join(['{n}/|/{l_bar}| ',
+                                              '{n_fmt}/{total_fmt}',
+                                              ' [{elapsed}<{remaining}',
+                                              ', {rate_fmt}], ',
+                                              'loss: {postfix[loss]}, ',
+                                              'acc: {postfix[acc]}'])) as t:
                     for input, target in dls[phase]:
                         input = input.to(device)
                         target = target.to(device)

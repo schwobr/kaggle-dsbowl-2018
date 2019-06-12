@@ -50,12 +50,12 @@ class Net:
                 with tqdm(dls[phase],
                           desc=f'epoch {epoch+1}/{num_epochs}: {phase}',
                           postfix={1: 0, 'loss': 0, 'acc': 0},
-                          bar_format=''.join(['{n}/|/{l_bar}| ',
-                                              '{n_fmt}/{total_fmt}',
-                                              ' [{elapsed}<{remaining}',
-                                              ', {rate_fmt}], ',
-                                              'loss: {postfix[loss]}, ',
-                                              'acc: {postfix[acc]}'])) as t:
+                          bar_format=('{l_bar}{bar}| '
+                                      '{n_fmt}/{total_fmt}'
+                                      ' [{elapsed}<{remaining}'
+                                      ', {rate_fmt}], '
+                                      'loss: {postfix[loss]}, '
+                                      'acc: {postfix[acc]}')) as t:
                     for input, target in dls[phase]:
                         input = input.to(device)
                         target = target.to(device)
@@ -73,7 +73,7 @@ class Net:
                                     scheduler.step()
 
                         running_loss += loss.item()
-                        acc = np.mean([metric(target, output).item()
+                        acc = np.mean([metric(output, target).item()
                                        for metric in self.metrics])
                         running_acc += acc
                         k += 1
@@ -117,7 +117,7 @@ class Net:
                 output = self.model(input)
                 loss_tot += self.loss(output, target).item()
                 for metric in self.metrics:
-                    metrics_tot[metric] += metric(target, output).item()
+                    metrics_tot[metric] += metric(output, target).item()
         loss_tot /= len(dl)
         s = [f'loss: {loss_tot:.4f}']
         for metric in metrics_tot:

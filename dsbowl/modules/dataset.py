@@ -71,7 +71,9 @@ class CellsDataset(Dataset):
         i = self.ids[idx]
         img_path, mask_path = self.__get_paths(i)
         img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
-        mask = self.__get_mask(mask_path, erosion=False, label=label)
+        mask = self.__get_mask(
+            mask_path, img.shape[: 2],
+            erosion=False, label=label)
         if transformed:
             tfm = self.transforms(image=img, mask=mask)
             img = tensor_to_img(tfm['image'])

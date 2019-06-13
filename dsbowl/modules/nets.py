@@ -153,10 +153,10 @@ class Net:
             return predict_all(self.model, dl)
 
     def load(self, model):
-        self.model.load_state_dict(torch.load(model))
+        self.model.load_state_dict(torch.load(model.with_suffix('.pth')))
 
     def save(self, path):
-        torch.save(self.model.state_dict(), path)
+        torch.save(self.model.state_dict(), path.with_suffix('.pth'))
 
 
 class Scheduler:

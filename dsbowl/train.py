@@ -11,11 +11,10 @@ from torch.utils.tensorboard import SummaryWriter
 from modules.dataset import load_train_data, load_test_data
 from modules.preds import create_submission
 from modules.metrics import mean_iou
-from modules.utils import getNextFilePath
 from modules.transforms import get_train_tfms, get_test_tfms
 from modules.nets import Net, OneCycleScheduler
 from modules.model_factory import get_model
-from modules.files import get_sizes
+from modules.files import get_sizes, getNextFilePath
 import config as cfg
 
 

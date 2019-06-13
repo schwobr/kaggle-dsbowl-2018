@@ -39,8 +39,8 @@ def run():
     opt = optim.Adam(mod.parameters(), lr=cfg.LR, weight_decay=cfg.WD)
     net = Net(mod, opt, nn.BCELoss(), [mean_iou], cfg.MODELS_PATH)
 
-    save_name = f'{cfg.MODEL}_{cfg.EPOCHS}_'
-    save_name += f'{cfg.LR}_{cfg.WD}_{getNextFilePath(cfg.MODELS_PATH)}'
+    save_name = f'{cfg.MODEL}_{cfg.EPOCHS}_{cfg.LR}_{cfg.WD}'
+    save_name += f'_{getNextFilePath(cfg.MODELS_PATH, save_name)}'
 
     writer = SummaryWriter(log_dir=cfg.LOG/save_name)
     writer.add_graph(

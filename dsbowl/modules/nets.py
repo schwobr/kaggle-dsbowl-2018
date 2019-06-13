@@ -1,7 +1,6 @@
 from tqdm.autonotebook import tqdm
 from datetime import timedelta
 import time
-import math
 import torch
 import numpy as np
 from numbers import Number
@@ -191,7 +190,7 @@ class Scheduler:
 class OneCycleScheduler(Scheduler):
     def __init__(
             self, lr_max, train_len, div_factor=25, moms=(0.95, 0.85),
-            pct_start=0.3, final_div=1e4, bs=8, **kwargs):
+            pct_start=0.3, final_div=1e4, **kwargs):
         super().__init__(step_on_batch=True, **kwargs)
         if isinstance(lr_max, Number):
             lr_max = [lr_max]
@@ -202,9 +201,8 @@ class OneCycleScheduler(Scheduler):
         self.mom_max = moms[0]
         self.mom_min = moms[1]
         self.final_div = final_div
-        n = math.ceil(train_len/bs)
-        self.a1 = pct_start*n
-        self.a2 = n-self.a1
+        self.a1 = pct_start*train_len
+        self.a2 = train_len-self.a1
 
     def __call__(self, optim, n_epochs):
         super().__call__(optim, n_epochs)

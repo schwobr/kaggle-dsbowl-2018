@@ -47,7 +47,7 @@ def run():
     writer.add_graph(
         mod, input_to_model=next(iter(trainloader))[0],
         operator_export_type='RAW')
-    scheduler = OneCycleScheduler(cfg.LR, len(trainloader), bs=cfg.BATCH_SIZE)
+    scheduler = OneCycleScheduler(cfg.LR, len(trainloader))
 
     mod = net.fit(dls, cfg.EPOCHS, save_name, device, scheduler=scheduler)
 

@@ -22,7 +22,7 @@ class Net:
 
     def fit(
             self, dls, num_epochs, save_name, device, state_dict=None,
-            scheduler=None):
+            writer=None, scheduler=None):
         since = time.time()
         if scheduler is not None:
             scheduler = scheduler(self.optim, num_epochs)
@@ -65,16 +65,30 @@ class Net:
                         with torch.set_grad_enabled(phase == 'train'):
                             output = self.model(input)
                             loss = self.loss(output, target)
-
+                            acc = np.mean([metric(output, target).item()
+                                           for metric in self.metrics])
                             if phase == 'train':
                                 loss.backward()
                                 self.optim.step()
+                                if writer is not None:
+                                    writer.add_scalar(
+                                        'loss', loss.item(),
+                                        global_step=k + len(dls['train']) *
+                                        epoch)
+                                    writer.add_scalar(
+                                        'acc', acc, global_step=k +
+                                        len(dls['train']) * epoch)
                                 if scheduler.step_on_batch:
+                                    if writer is not None:
+                                        for i, param_group in enumerate(
+                                                self.optim.param_groups):
+                                            writer.add_scalar(
+                                                f'lr{i}', param_group['lr'],
+                                                global_step=k +
+                                                len(dls['train']) * epoch)
                                     scheduler.step()
 
                         running_loss += loss.item()
-                        acc = np.mean([metric(output, target).item()
-                                       for metric in self.metrics])
                         running_acc += acc
                         k += 1
                         t.postfix["loss"] = running_loss/k
@@ -95,7 +109,14 @@ class Net:
                     val_acc_history.append(epoch_acc)
                 else:
                     if not scheduler.step_on_batch:
+                        if writer is not None:
+                            for i, param_group in enumerate(
+                                    self.optim.param_groups):
+                                writer.add_scalar(
+                                    f'lr{i}', param_group['lr'],
+                                    global_step=epoch)
                         scheduler.step()
+
             print()
 
         time_elapsed = time.time() - since

@@ -16,6 +16,7 @@ MODELS_PATH = PROJECT_PATH/'models/'
 SUB_PATH = PROJECT_PATH/'submissions/'
 TRAIN_CSV = PROJECT_PATH/'stage1_train.csv'
 TEST_CSV = PROJECT_PATH/'stage2_test_final.csv'
+LOG = Path('/work/stages/schwob/runs')
 
 # NORMALIZE
 MEAN = (0.5, 0.5, 0.5)

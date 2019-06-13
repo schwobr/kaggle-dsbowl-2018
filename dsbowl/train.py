@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 
 from modules.dataset import load_train_data, load_test_data
 from modules.preds import create_submission
@@ -42,6 +43,10 @@ def run():
     save_name = f'{cfg.MODEL}_{cfg.EPOCHS}_'
     save_name += f'{cfg.LR}_{cfg.WD}_{getNextFilePath(cfg.MODELS_PATH)}'
 
+    writer = SummaryWriter(log_dir=cfg.LOG/save_name)
+    writer.add_graph(
+        mod, input_to_model=next(iter(trainloader))[0],
+        operator_export_type='RAW')
     scheduler = OneCycleScheduler(cfg.LR, len(trainloader), bs=cfg.BATCH_SIZE)
 
     mod = net.fit(dls, cfg.EPOCHS, save_name, device, scheduler=scheduler)
@@ -54,3 +59,4 @@ def run():
         overlap=cfg.TEST_OVERLAP)
 
     create_submission(preds, sizes, ids, folder=cfg.SUB_PATH)
+    writer.close()

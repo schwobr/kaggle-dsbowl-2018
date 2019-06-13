@@ -25,7 +25,7 @@ def run(model):
 
     testloader = load_test_data(
         cfg.TEST_PATH, size=cfg.MAX_SIZE, bs=cfg.BATCH_SIZE,
-        transforms=get_test_tfms)
+        transforms=get_test_tfms(cfg.MAX_SIZE))
 
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 

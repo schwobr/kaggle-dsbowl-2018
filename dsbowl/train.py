@@ -48,7 +48,8 @@ def run():
         operator_export_type='RAW')
     scheduler = OneCycleScheduler(cfg.LR, len(trainloader))
 
-    mod = net.fit(dls, cfg.EPOCHS, save_name, device, scheduler=scheduler)
+    mod = net.fit(dls, cfg.EPOCHS, save_name, device,
+                  writer=writer, scheduler=scheduler)
 
     ids = testloader.dataset.ids
     sizes = get_sizes(cfg.TEST_CSV, ids)

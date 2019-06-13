@@ -53,8 +53,8 @@ class Net:
                                       '{n_fmt}/{total_fmt}'
                                       ' [{elapsed}<{remaining}'
                                       ', {rate_fmt}], '
-                                      'loss: {postfix[loss]}, '
-                                      'acc: {postfix[acc]}')) as t:
+                                      'loss: {postfix[loss]:.4f}, '
+                                      'acc: {postfix[acc]:.4f}')) as t:
                     for input, target in dls[phase]:
                         input = input.to(device)
                         target = target.to(device)

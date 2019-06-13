@@ -69,7 +69,7 @@ class CellsDataset(Dataset):
 
     def show(self, idx, show_mask=True, label=False, transformed=False):
         i = self.ids[idx]
-        img_path, mask_path = self.__get_paths(self.ids[i])
+        img_path, mask_path = self.__get_paths(i)
         img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
         mask = self.__get_mask(mask_path, erosion=False, label=label)
         if transformed:

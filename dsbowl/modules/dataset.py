@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from modules.transforms import get_basics
+from modules.transforms_functional import tensor_to_img
 from numbers import Number
 
 
@@ -66,11 +67,15 @@ class CellsDataset(Dataset):
             mask = mask + mask_
         return np.expand_dims(mask, -1)
 
-    def show(self, idx, show_mask=True, label=False):
+    def show(self, idx, show_mask=True, label=False, transformed=False):
         i = self.ids[idx]
         img_path, mask_path = self.__get_paths(self.ids[i])
         img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
-        mask = self.__get_mask(mask_path, eorsion=False, label=label)
+        mask = self.__get_mask(mask_path, erosion=False, label=label)
+        if transformed:
+            tfm = self.transforms(image=img, mask=mask)
+            img = tensor_to_img(tfm['image'])
+            mask = tensor_to_img(tfm['mask'])
         plt.figure(0, (15, 15))
         if show_mask:
             if label:
@@ -89,9 +94,10 @@ class CellsDataset(Dataset):
             plt.axis('off')
             plt.imshow(img)
 
-    def show_rand(self, show_mask=True, label=False):
+    def show_rand(self, show_mask=True, label=False, transformed=False):
         idx = random.randint(0, len(self.ids)-1)
-        self.show(idx, show_mask=show_mask, label=label)
+        self.show(idx, show_mask=show_mask,
+                  label=label, transformed=transformed)
 
 
 class Testset(Dataset):

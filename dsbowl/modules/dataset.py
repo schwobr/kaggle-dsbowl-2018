@@ -91,7 +91,7 @@ class CellsDataset(Dataset):
             plt.imshow(img)
             plt.subplot(122)
             plt.axis('off')
-            plt.imshow(mask, cmap=cmap)
+            plt.imshow(mask.squeeze(), cmap=cmap)
         else:
             plt.axis('off')
             plt.imshow(img)

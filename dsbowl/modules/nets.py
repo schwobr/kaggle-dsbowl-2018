@@ -158,6 +158,50 @@ class Net:
     def save(self, path):
         torch.save(self.model.state_dict(), path.with_suffix('.pth'))
 
+    @staticmethod
+    def __isleaf(module):
+        children = list(module.children())
+        return children == []
+
+    def freeze(self, until='ALL'):
+        if until == 'ALL':
+            for param in self.model.parameters():
+                param.requires_grad = False
+        else:
+            for name, module in self.model.named_modules():
+                if name == until:
+                    return
+                if self.__isleaf(module):
+                    for param in module.parameters():
+                        param.requires_grad = False
+
+    def unfreeze(self):
+        for param in self.model.parameters():
+            param.requires_grad = True
+
+    def get_groups(self, limits):
+        if isinstance(limits, str):
+            limits = [limits]
+
+        groups = {}
+        found = []
+        for limit in limits:
+            group = []
+            for name, module in self.model.named_modules():
+                if name == limit:
+                    break
+                if self.__isleaf(module) and name not in found:
+                    group += list(module.parameters())
+                    found.append(name)
+            groups[limit] = group
+        end_group = []
+        for name, module in self.model.named_modules():
+            if self.__isleaf(module) and name not in found:
+                end_group += list(module.parameters())
+                found.append(name)
+        groups['end'] = end_group
+        return groups
+
 
 class Scheduler:
     def __init__(

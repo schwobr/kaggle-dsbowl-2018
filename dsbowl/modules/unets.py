@@ -118,6 +118,40 @@ class UpConv(nn.Module):
         return x
 
 
+class Decoder(nn.Module):
+    def __init__(self, sizes):
+        super(Decoder, self).__init__()
+        self.upconvs = nn.ModuleList(
+            [UpConv(size, 256, 1) for size in sizes[:-1]])
+
+        self.doubleconvs = nn.ModuleList([
+            DoubleConv(
+                256, 128, 3, padding=1, scale_factor=2 ** n)
+            for n in range(3, 0, -1)])
+        self.doubleconvs.append(DoubleConv(256, 128, 3, padding=1))
+
+        self.aggregate = ConvBnRelu(512, 256, 3, padding=1)
+        self.decode = DecoderBlock(256, 128 + sizes[-1], 128, 3, padding=1)
+        self.up = nn.UpsamplingNearest2d(scale_factor=2)
+        self.doubleconv = DoubleConv(128, 64, 3, padding=1)
+
+    def forward(self, x, outputs):
+        ps = []
+        p = None
+        out0 = self.outputs.pop()
+        for k, out in enumerate(self.outputs):
+            upconv = self.upconvs[k]
+            p = upconv(out, p)
+            doubleconv = self.doubleconvs[k]
+            ps.append(doubleconv(p))
+        x = torch.cat(ps, dim=1)
+        x = self.aggregate(x)
+        x = self.decode(x, out0)
+        x = self.up(x)
+        x = self.doubleconv(x)
+        return x
+
+
 class Unet(nn.Module):
     def __init__(self, encoder, n_classes, act='sigmoid'):
         super(Unet, self).__init__()
@@ -141,42 +175,18 @@ class Unet(nn.Module):
         layer2_param = list(encoder.layer2.parameters())[-1]
         layer3_param = list(encoder.layer3.parameters())[-1]
         layer4_param = list(encoder.layer4.parameters())[-1]
-        self.upconvs = nn.ModuleList(
-            [UpConv(relu_param.size(0), 256, 1),
-             UpConv(layer1_param.size(0), 256, 1),
-             UpConv(layer2_param.size(0), 256, 1),
-             UpConv(layer3_param.size(0), 256, 1),
-             UpConv(layer4_param.size(0), 256, 1)][:: -1])
+        sizes = map(lambda x: x.size(0), [layer4_param,
+                                          layer3_param,
+                                          layer2_param,
+                                          layer1_param,
+                                          relu_param])
 
-        self.doubleconvs = nn.ModuleList([
-            DoubleConv(
-                256, 128, 3, padding=1, scale_factor=2 ** n)
-            for n in range(3, 0, -1)])
-        self.doubleconvs.append(DoubleConv(256, 128, 3, padding=1))
-
-        self.aggregate = ConvBnRelu(512, 256, 3, padding=1)
-        self.decode = DecoderBlock(
-            256, 128 + relu_param.size(0),
-            128, 3, padding=1)
-        self.up = nn.UpsamplingNearest2d(scale_factor=2)
-        self.doubleconv = DoubleConv(128, 64, 3, padding=1)
+        self.decoder = Decoder(list(sizes))
         self.activation = get_activation(act, 64, n_classes)
 
     def forward(self, x):
         x = self.encoder(x)
-        ps = []
-        p = None
-        for k, out in enumerate(self.outputs[::-1]):
-            upconv = self.upconvs[k]
-            p = upconv(out, p)
-            if k < 4:
-                doubleconv = self.doubleconvs[k]
-                ps.append(doubleconv(p))
-        x = torch.cat(ps, dim=1)
-        x = self.aggregate(x)
-        x = self.decode(x, self.outputs[0])
-        x = self.up(x)
-        x = self.doubleconv(x)
+        x = self.decoder(x, self.outputs[::-1])
         x = self.activation(x)
         self.outputs = []
         return x

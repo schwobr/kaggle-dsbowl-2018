@@ -1,9 +1,9 @@
 from pathlib import Path
 
 # IMAGE SIZES
-TRAIN_SIZE = 256
+TRAIN_SIZE = 224
 MAX_SIZE = 1388
-TEST_SIZE = 256
+TEST_SIZE = 224
 TEST_OVERLAP = 64
 IMG_CHANNELS = 3
 
@@ -23,10 +23,10 @@ MEAN = (0.5, 0.5, 0.5)
 STD = (0.5, 0.5, 0.5)
 
 # LEARNER CONFIG
-BATCH_SIZE = 4
+BATCH_SIZE = 16
 WD = 0.1
 LR = 2e-4
 EPOCHS = 50
-MODEL = 'resnet34'
+MODEL = 'resnet101'
 CLASSES = 1
 ACT = 'sigmoid'

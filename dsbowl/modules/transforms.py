@@ -1,6 +1,7 @@
 import random
 import modules.transforms_functional as F
 import numpy as np
+from numbers import Number
 
 
 class Compose:
@@ -131,6 +132,8 @@ class ShiftScaleRotate(DualTransform):
 class Resize(DualTransform):
     def __init__(self, size, prob=1.):
         super().__init__(prob)
+        if isinstance(size, Number):
+            size = (size, size)
         self.size = size
 
     def apply(self, img, **params):
@@ -154,12 +157,14 @@ class Pad(DualTransform):
 class ExtendPad(DualTransform):
     def __init__(self, size, mode='constant', prob=1., **kwargs):
         super().__init__(prob)
+        if isinstance(size, Number):
+            size = (size, size)
         self.size = size
         self.mode = mode
         self.params = kwargs
 
     def apply(self, img, **params):
-        assert self.size[0] > img.shape[0] and self.size[1] > img.shape[1],\
+        assert self.size[0] >= img.shape[0] and self.size[1] >= img.shape[1],\
             'Image must be smaller than specified size'
         pad_width = (
             (0, self.size[0] - img.shape[0]),
@@ -174,6 +179,8 @@ class ExtendPad(DualTransform):
 class ResizePad(DualTransform):
     def __init__(self, size, pad_width, mode='constant', prob=1., **kwargs):
         super().__init__(prob)
+        if isinstance(size, Number):
+            size = (size, size)
         self.size = size
         self.pad_width = pad_width
         self.mode = mode
@@ -190,6 +197,8 @@ class ResizePad(DualTransform):
 class CenterCrop(DualTransform):
     def __init__(self, size, prob=1.):
         super().__init__(prob)
+        if isinstance(size, Number):
+            size = (size, size)
         self.size = size
 
     def apply(self, img, **params):
@@ -199,6 +208,8 @@ class CenterCrop(DualTransform):
 class RandomCrop(DualTransform):
     def __init__(self, size, prob=1.):
         super().__init__(prob)
+        if isinstance(size, Number):
+            size = (size, size)
         self.size = size
 
     def apply(self, img, dx=0, dy=0):

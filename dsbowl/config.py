@@ -25,8 +25,12 @@ STD = (0.5, 0.5, 0.5)
 # LEARNER CONFIG
 BATCH_SIZE = 16
 WD = 0.1
-LR = 2e-4
+LRS = [2e-4]
+GROUP_LIMITS = None
+FREEZE_UNTIL = None
 EPOCHS = 50
+UNFROZE_EPOCHS = None
+PRETRAINED = False
 MODEL = 'resnet101'
 CLASSES = 1
 ACT = 'sigmoid'

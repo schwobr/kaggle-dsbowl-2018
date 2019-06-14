@@ -183,7 +183,7 @@ class Net:
         if isinstance(limits, str):
             limits = [limits]
 
-        groups = {}
+        groups = []
         found = []
         for limit in limits:
             group = []
@@ -193,13 +193,13 @@ class Net:
                 if self.__isleaf(module) and name not in found:
                     group += list(module.parameters())
                     found.append(name)
-            groups[limit] = group
+            groups.append(group)
         end_group = []
         for name, module in self.model.named_modules():
             if self.__isleaf(module) and name not in found:
                 end_group += list(module.parameters())
                 found.append(name)
-        groups['end'] = end_group
+        groups.append(end_group)
         return groups
 
 

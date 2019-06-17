@@ -21,7 +21,7 @@ class Net:
 
     def fit(
             self, dls, num_epochs, save_name, device, state_dict=None,
-            writer=None, scheduler=None):
+            writer=None, scheduler=None, frozen=None):
         since = time.time()
         if scheduler is not None:
             scheduler = scheduler(self.optim, num_epochs)
@@ -67,6 +67,9 @@ class Net:
                             acc = np.mean([metric(output, target).item()
                                            for metric in self.metrics])
                             if phase == 'train':
+                                step = k+len(dls['train'])*epoch
+                                if frozen is not None:
+                                    step += len(dls['train'])*frozen
                                 loss.backward()
                                 self.optim.step()
                                 if writer is not None:
@@ -75,16 +78,14 @@ class Net:
                                         global_step=k + len(dls['train']) *
                                         epoch)
                                     writer.add_scalar(
-                                        'acc', acc, global_step=k +
-                                        len(dls['train']) * epoch)
+                                        'acc', acc, global_step=step)
                                 if scheduler.step_on_batch:
                                     if writer is not None:
                                         for i, param_group in enumerate(
                                                 self.optim.param_groups):
                                             writer.add_scalar(
                                                 f'lr{i}', param_group['lr'],
-                                                global_step=k +
-                                                len(dls['train']) * epoch)
+                                                global_step=step)
                                     scheduler.step()
 
                         running_loss += loss.item()
@@ -109,11 +110,14 @@ class Net:
                 else:
                     if not scheduler.step_on_batch:
                         if writer is not None:
+                            step = epoch
+                            if frozen is not None:
+                                step += frozen
                             for i, param_group in enumerate(
                                     self.optim.param_groups):
                                 writer.add_scalar(
                                     f'lr{i}', param_group['lr'],
-                                    global_step=epoch)
+                                    global_step=step)
                         scheduler.step()
 
             print()

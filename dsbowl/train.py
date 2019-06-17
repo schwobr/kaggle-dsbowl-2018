@@ -69,7 +69,7 @@ def run():
     if cfg.UNFROZE_EPOCHS is not None:
         net.unfreeze()
         mod = net.fit(dls, cfg.UNFROZE_EPOCHS, save_name, device,
-                      writer=writer, scheduler=scheduler)
+                      writer=writer, scheduler=scheduler, frozen=cfg.EPOCHS)
 
     ids = testloader.dataset.ids
     sizes = get_sizes(cfg.TEST_CSV, ids)

@@ -67,6 +67,7 @@ def run():
                   writer=writer, scheduler=scheduler)
 
     if cfg.UNFROZE_EPOCHS is not None:
+        scheduler = OneCycleScheduler(cfg.LRS, len(trainloader))
         net.unfreeze()
         mod = net.fit(dls, cfg.UNFROZE_EPOCHS, save_name, device,
                       writer=writer, scheduler=scheduler, frozen=cfg.EPOCHS)

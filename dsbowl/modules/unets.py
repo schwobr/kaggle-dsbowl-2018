@@ -164,6 +164,13 @@ class Unet(nn.Module):
         def hook(module, input, output):
             self.outputs.append(output)
 
+        layers = ['relu']+[f'layer{k+1}' for k in range(4)]
+        sizes = []
+        for layer in layers:
+            module = self.encoder.__getattribute__(layer)
+            module.register_forward_hook(hook)
+            sizes.append(list(module.parameters())[-1].size(0))
+        """
         self.encoder.relu.register_forward_hook(hook)
         self.encoder.layer1.register_forward_hook(hook)
         self.encoder.layer2.register_forward_hook(hook)
@@ -180,8 +187,8 @@ class Unet(nn.Module):
                                           layer2_param,
                                           layer1_param,
                                           relu_param])
-
-        self.decoder = Decoder(list(sizes))
+        """
+        self.decoder = Decoder(sizes[::-1])
         self.activation = get_activation(act, 64, n_classes)
 
     def forward(self, x):

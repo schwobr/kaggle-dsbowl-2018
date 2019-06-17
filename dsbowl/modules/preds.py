@@ -18,6 +18,8 @@ def predict_all(model, dl):
     preds = []
     with torch.no_grad():
         for X_test in tqdm(dl):
+            if isinstance(X_test, list):
+                X_test = X_test[0]
             preds.append(model(X_test).cpu())
     preds = torch.cat(preds)
     return preds
@@ -31,6 +33,8 @@ def predict_TTA_all(model, dl, device, sizes, size=512, overlap=64,
     k = 0
     with torch.no_grad():
         for X_test in tqdm(dl):
+            if isinstance(X_test, list):
+                X_test = X_test[0]
             for tens in X_test:
                 s = sizes[k]
                 crops, pos, overlaps = get_crops(tens.cpu()[:, :s[0], :s[1]],

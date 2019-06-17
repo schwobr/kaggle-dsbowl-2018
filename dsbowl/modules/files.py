@@ -60,4 +60,4 @@ def get_sizes(file, ids):
     sizes = np.zeros((len(ids), 2))
     for k, i in enumerate(ids):
         sizes[k, :] = df.loc[df['ImageId'] == i, 'Height':'Width']
-    return sizes
+    return sizes.astype('int')

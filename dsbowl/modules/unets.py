@@ -138,8 +138,8 @@ class Decoder(nn.Module):
     def forward(self, x, outputs):
         ps = []
         p = None
-        out0 = self.outputs.pop()
-        for k, out in enumerate(self.outputs):
+        out0 = outputs.pop()
+        for k, out in enumerate(outputs):
             upconv = self.upconvs[k]
             p = upconv(out, p)
             doubleconv = self.doubleconvs[k]

@@ -164,30 +164,16 @@ class Unet(nn.Module):
         def hook(module, input, output):
             self.outputs.append(output)
 
-        layers = ['relu']+[f'layer{k+1}' for k in range(4)]
+        layers = ['conv1', 'relu']+[f'layer{k+1}' for k in range(4)]
         sizes = []
         for layer in layers:
-            module = self.encoder.__getattribute__(layer)
-            module.register_forward_hook(hook)
-            sizes.append(list(module.parameters())[-1].size(0))
-        """
-        self.encoder.relu.register_forward_hook(hook)
-        self.encoder.layer1.register_forward_hook(hook)
-        self.encoder.layer2.register_forward_hook(hook)
-        self.encoder.layer3.register_forward_hook(hook)
-        self.encoder.layer4.register_forward_hook(hook)
-
-        relu_param = list(encoder.conv1.parameters())[-1]
-        layer1_param = list(encoder.layer1.parameters())[-1]
-        layer2_param = list(encoder.layer2.parameters())[-1]
-        layer3_param = list(encoder.layer3.parameters())[-1]
-        layer4_param = list(encoder.layer4.parameters())[-1]
-        sizes = map(lambda x: x.size(0), [layer4_param,
-                                          layer3_param,
-                                          layer2_param,
-                                          layer1_param,
-                                          relu_param])
-        """
+            for name, module in self.encoder.named_children():
+                if name==layer:
+                    if name !='conv1':
+                        module.register_forward_hook(hook)
+                    if name != 'relu':
+                        sizes.append(list(module.parameters())[-1].size(0))
+                    break
         self.decoder = Decoder(sizes[::-1])
         self.activation = get_activation(act, 64, n_classes)
 

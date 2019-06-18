@@ -51,7 +51,7 @@ def predict_TTA_all(model, dl, device, sizes, size=512, overlap=64,
                 pred /= overlaps
                 preds.append(pred)
                 k += 1
-    return torch.cat(preds)
+    return preds
 
 
 def get_crops(img, size, overlap, out_channels=1):

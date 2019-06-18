@@ -25,8 +25,8 @@ STD = (0.5, 0.5, 0.5)
 # LEARNER CONFIG
 BATCH_SIZE = 8
 WD = 0.1
-LRS = [1e-6, 1e-5, 1e-4]
-GROUP_LIMITS = ['encoder.layer4', 'decoder']
+LRS = [1e-4]
+GROUP_LIMITS = None
 FREEZE_UNTIL = 'encoder.layer4'
 EPOCHS = 20
 UNFROZE_EPOCHS = 20

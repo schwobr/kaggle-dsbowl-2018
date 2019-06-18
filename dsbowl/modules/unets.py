@@ -185,7 +185,7 @@ class Unet(nn.Module):
         y = self.decoder(y, self.outputs[::-1])
         x = torch.cat([x, y], dim=1)
         y = self.final_conv(x)
-        x += y
+        x = x+y
         x = self.activation(x)
         self.outputs = []
         return x

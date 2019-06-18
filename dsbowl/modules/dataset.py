@@ -158,7 +158,14 @@ def load_train_data(path, size=256, bs=8, val_split=0.2,
         size=size,
         transforms=transforms, use_augs=use_augs)
 
-    def col(l): return torch.cat(l, dim=0)
+    def col(l):
+        imgs = []
+        masks = []
+        for img, mask in l:
+            imgs.append(img)
+            masks.append(mask)
+        return torch.cat(imgs, dim=0), torch.cat(masks, dim=0)
+
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=bs, shuffle=True, num_workers=0, collate_fn=col)
     valloader = torch.utils.data.DataLoader(

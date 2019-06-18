@@ -157,10 +157,12 @@ def load_train_data(path, size=256, bs=8, val_split=0.2,
         path, ids[int(k * n_ids): int((k + val_split) * n_ids)],
         size=size,
         transforms=transforms, use_augs=use_augs)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=bs,
-                                              shuffle=True, num_workers=0)
-    valloader = torch.utils.data.DataLoader(valset, batch_size=bs,
-                                            shuffle=False, num_workers=0)
+
+    def col(l): return torch.cat(l, dim=0)
+    trainloader = torch.utils.data.DataLoader(
+        trainset, batch_size=bs, shuffle=True, num_workers=0, collate_fn=col)
+    valloader = torch.utils.data.DataLoader(
+        valset, batch_size=bs, shuffle=False, num_workers=0, collate_fn=col)
     return trainloader, valloader
 
 

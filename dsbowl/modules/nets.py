@@ -156,11 +156,14 @@ class Net:
         else:
             return predict_all(self.model, dl)
 
-    def load(self, model):
-        self.model.load_state_dict(torch.load(model.with_suffix('.pth')))
+    def load(self, name):
+        self.model.load_state_dict(torch.load(
+            self.models_dir/name.with_suffix('.pth')))
 
-    def save(self, path):
-        torch.save(self.model.state_dict(), path.with_suffix('.pth'))
+    def save(self, name):
+        torch.save(
+            self.model.state_dict(),
+            self.models_dir / name.with_suffix('.pth'))
 
     @staticmethod
     def __isleaf(module):

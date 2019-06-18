@@ -168,8 +168,8 @@ class Unet(nn.Module):
         sizes = []
         for layer in layers:
             for name, module in self.encoder.named_children():
-                if name==layer:
-                    if name !='conv1':
+                if name == layer:
+                    if name != 'conv1':
                         module.register_forward_hook(hook)
                     if name != 'relu':
                         sizes.append(list(module.parameters())[-1].size(0))

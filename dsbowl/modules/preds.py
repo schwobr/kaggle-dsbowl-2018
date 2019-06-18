@@ -46,10 +46,8 @@ def predict_TTA_all(model, dl, device, sizes, size=512, overlap=64,
                     img = F.tensor_to_img(crop)
                     res = predict_TTA(model, img, size,
                                       rotations, device, out_channels)
-                    print(s)
-                    print(x_min, x_max)
                     pred[:, :, x_min:x_max, y_min:y_max] += res[
-                        :, :x_max-x_min, :y_max-y_min]
+                         :, :, :x_max-x_min, :y_max-y_min]
                 pred /= overlaps
                 preds.append(pred)
                 k += 1
@@ -58,8 +56,8 @@ def predict_TTA_all(model, dl, device, sizes, size=512, overlap=64,
 
 def get_crops(img, size, overlap, out_channels=1):
     n, h, w = img.size()
-    n_h = max(1, ceil((h-size[0])/(size[0]-overlap)))
-    n_w = max(1, ceil((w-size[1])/(size[1]-overlap)))
+    n_h = max(1, ceil((h-overlap)/(size[0]-overlap)))
+    n_w = max(1, ceil((w-overlap)/(size[1]-overlap)))
     crops = []
     pos = []
     overlaps = torch.zeros((1, out_channels, h, w))

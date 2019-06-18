@@ -260,7 +260,7 @@ class ToTensor(DualTransform):
         super().__init__(1.)
 
     def apply(self, img, **params):
-        return F.to_tensor(img)
+        return F.img_to_tensor(img)
 
 
 def get_train_tfms(size):

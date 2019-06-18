@@ -151,6 +151,7 @@ class Net:
         return loss_tot, metrics_tot
 
     def predict(self, dl, device, sizes, TTA=True, **kwargs):
+        self.model.to(device)
         if TTA:
             return predict_TTA_all(self.model, dl, device, sizes, **kwargs)
         else:

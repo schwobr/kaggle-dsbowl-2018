@@ -45,7 +45,7 @@ import config as cfg
 
 ```{python}
 tl, vl = load_train_data(cfg.TRAIN_PATH, size=cfg.TRAIN_SIZE, bs=cfg.BATCH_SIZE,
-                         transforms=get_train_tfms(cfg.TRAIN_SIZE), use_augs=False, shuffle=False)
+                         transforms=get_train_tfms(cfg.TRAIN_SIZE), use_augs=True, shuffle=False)
 ```
 
 ```{python}
@@ -88,31 +88,11 @@ writer.add_graph(mod, input_to_model=next(iter(tl))[0], operator_export_type='RA
 ```
 
 ```{python}
-l = []
-for name, module in mod.named_modules():
-    if name=='encoder.layer4':
-        break
-    if isleaf(module):
-        l.append(name)
-print('\n'.join(l))
+net.fit(dls, cfg.EPOCHS, save_name, device, writer=writer, scheduler=scheduler)
 ```
 
 ```{python}
-for name, param in mod.named_parameters():
-    print(name)            
-```
-
-```{python}
-sizes = get_sizes(cfg.TRAIN_CSV, vl.dataset.ids)
-sizes.shape
-```
-
-```{python}
-net.load(cfg.MODELS_PATH/save_name)
-```
-
-```{python}
-ts.show(0, transformed = True)
+net.load("resnet34_10_0.0002_0.pth")
 ```
 
 ```{python}
@@ -120,13 +100,13 @@ X, y_true = ts[3]
 ```
 
 ```{python}
-y_pred = net.model(X.unsqueeze(0)).detach().squeeze(0)
+y_pred = net.model(X).detach()
 ```
 
 ```{python}
 img = tensor_to_img(X)
-mask_true = tensor_to_img(y_true)
-mask_pred = tensor_to_img(y_pred)
+mask_true = tensor_to_img(y_true).squeeze()
+mask_pred = tensor_to_img(y_pred).squeeze()
 plt.figure(0, (15, 15))
 plt.subplot(131)
 plt.axis('off')
@@ -145,33 +125,17 @@ print(binary_cross_entropy(y_pred, y_true))
 ```
 
 ```{python}
-for m in net.model:
-    print(m)
+testloader = load_test_data(cfg.TEST_PATH, size=cfg.MAX_SIZE, bs=cfg.BATCH_SIZE, transforms=get_test_tfms(cfg.MAX_SIZE))
+testset = testloader.dataset
 ```
 
 ```{python}
-class c:
-    def __init__(self):
-        self.a = []
-    
-def test(k, d=10):
-    if d > 0:
-        b = c()
-        print(b)
-        k.a.append(b)
-        test(b, d-1)
-        
-def test1(k, d=10):
-    if d>0:
-        print(k.a[0])
-        test1(k.a[0], d-1)
+ids = testset.ids
+sizes = get_sizes(cfg.TEST_CSV, ids)
 ```
 
 ```{python}
-k = c()
-test(k)
-print()
-test1(k)
+preds = net.predict(testloader, device, sizes, size=cfg.TEST_SIZE, overlap=cfg.TEST_OVERLAP, out_channels=cfg.CLASSES)
 ```
 
 ```{python}
@@ -225,13 +189,14 @@ sys.getsizeof(d)
 ```
 
 ```{python}
-for l in ascii_uppercase:
-    d.__setattr__(l*2, l*2)
-sys.getsizeof(d)
+from fastai.vision.models import DynamicUnet
+from fastai.vision.learner import create_body
+from torchvision.models import resnet34
+unet = DynamicUnet(create_body(resnet34, pretrained=False), 1)
 ```
 
 ```{python}
-d.__getattribute__('a')
+unet
 ```
 
 ```{python}

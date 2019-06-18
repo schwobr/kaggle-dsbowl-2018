@@ -155,4 +155,4 @@ def img_to_tensor(im):
 
 
 def tensor_to_img(im):
-    return np.moveaxis(im.numpy(), 1, -1).squeeze()
+    return (np.moveaxis(im.numpy().squeeze(0), 0, -1))

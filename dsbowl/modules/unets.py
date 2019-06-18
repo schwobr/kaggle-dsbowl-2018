@@ -175,11 +175,17 @@ class Unet(nn.Module):
                         sizes.append(list(module.parameters())[-1].size(0))
                     break
         self.decoder = Decoder(sizes[::-1])
-        self.activation = get_activation(act, 64, n_classes)
+        self.final_conv = nn.Sequential(
+            ConvBnRelu(67, 67, 3, padding=1),
+            ConvBnRelu(67, 67, 3, padding=1))
+        self.activation = get_activation(act, 67, n_classes)
 
     def forward(self, x):
-        x = self.encoder(x)
-        x = self.decoder(x, self.outputs[::-1])
+        y = self.encoder(x)
+        y = self.decoder(y, self.outputs[::-1])
+        x = torch.cat([x, y], dim=1)
+        y = self.final_conv(x)
+        x += y
         x = self.activation(x)
         self.outputs = []
         return x

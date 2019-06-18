@@ -23,14 +23,14 @@ MEAN = (0.5, 0.5, 0.5)
 STD = (0.5, 0.5, 0.5)
 
 # LEARNER CONFIG
-BATCH_SIZE = 8
+BATCH_SIZE = 32
 WD = 0.1
 LRS = [2e-4]
 GROUP_LIMITS = None
-FREEZE_UNTIL = 'encoder.layer4'
-EPOCHS = 20
-UNFROZE_EPOCHS = 20
-PRETRAINED = True
-MODEL = 'resnet101'
+FREEZE_UNTIL = None
+EPOCHS = 10
+UNFROZE_EPOCHS = None
+PRETRAINED = False
+MODEL = 'resnet34'
 CLASSES = 1
 ACT = 'sigmoid'

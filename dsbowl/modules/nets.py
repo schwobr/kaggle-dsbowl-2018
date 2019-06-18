@@ -158,12 +158,12 @@ class Net:
 
     def load(self, name):
         self.model.load_state_dict(torch.load(
-            self.models_dir/name.with_suffix('.pth')))
+            self.models_dir / name))
 
     def save(self, name):
         torch.save(
             self.model.state_dict(),
-            self.models_dir / name.with_suffix('.pth'))
+            self.models_dir / name)
 
     @staticmethod
     def __isleaf(module):

@@ -59,5 +59,5 @@ def get_sizes(file, ids):
     df = pd.read_csv(file, index_col=0)
     sizes = np.zeros((len(ids), 2))
     for k, i in enumerate(ids):
-        sizes[k, :] = df.loc[df['ImageId'] == i, 'Height':'Width']
+        sizes[k, :] = df.loc[df['ImageId'] == i, 'Height':'Width'].values
     return sizes.astype('int')

@@ -23,7 +23,7 @@ MEAN = (0.5, 0.5, 0.5)
 STD = (0.5, 0.5, 0.5)
 
 # LEARNER CONFIG
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 WD = 0.1
 LRS = [2e-4]
 GROUP_LIMITS = None

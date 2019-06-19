@@ -1,4 +1,4 @@
-from tqdm.autonotebook import tqdm
+from tqdm import tqdm
 from datetime import timedelta
 import time
 import torch

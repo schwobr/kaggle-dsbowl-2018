@@ -5,7 +5,7 @@ import cv2
 from math import ceil
 from numbers import Number
 
-from tqdm.autonotebook import tqdm
+from tqdm import tqdm
 from skimage.morphology import label
 
 import torch

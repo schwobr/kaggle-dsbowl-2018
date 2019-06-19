@@ -226,7 +226,7 @@ class DecoderFastAI(nn.Module):
             out = bn(out)
             if p is not None:
                 out = torch.cat([out, p], dim=1)
-            p = doubleconv(p)
+            p = doubleconv(out)
         return out + p
 
 

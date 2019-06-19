@@ -220,11 +220,11 @@ class DecoderFastAI(nn.Module):
         self.doubleconvs = nn.ModuleList(doubleconvs)
 
     def forward(self, x, outputs):
-        p = 0
+        p = None
         for bn, doubleconv, out in zip(
                 self.bns, self.doubleconvs, outputs + [x]):
             out = bn(out)
-            p = torch.cat([out, p], dim=1)
+            p = torch.cat([out, p], dim=1) if p is not None else out
             p = doubleconv(p)
         return out + p
 

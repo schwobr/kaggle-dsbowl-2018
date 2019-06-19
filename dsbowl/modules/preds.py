@@ -47,7 +47,7 @@ def predict_TTA_all(model, dl, device, sizes, size=512, overlap=64,
                     res = predict_TTA(model, img, size,
                                       rotations, device, out_channels)
                     pred[:, :, x_min:x_max, y_min:y_max] += res[
-                         :, :, :x_max-x_min, :y_max-y_min]
+                        :, :, :x_max-x_min, :y_max-y_min]
                 pred /= overlaps
                 preds.append(pred)
                 k += 1
@@ -148,5 +148,6 @@ def create_submission(preds, sizes, test_ids, folder, resize=False):
         lambda x: ' '.join(str(y) for y in x))
 
     base_name = 'sub_dsbowl_pt'
-    sub_file = folder / base_name+f'_{getNextFilePath(folder, base_name)}.csv'
+    sub_file = folder / (base_name +
+                         f'_{getNextFilePath(folder, base_name)}.csv')
     sub.to_csv(sub_file, index=False)

@@ -75,8 +75,7 @@ class Net:
                                 if writer is not None:
                                     writer.add_scalar(
                                         'loss', loss.item(),
-                                        global_step=k + len(dls['train']) *
-                                        epoch)
+                                        global_step=step)
                                     writer.add_scalar(
                                         'acc', acc, global_step=step)
                                 if scheduler.step_on_batch:

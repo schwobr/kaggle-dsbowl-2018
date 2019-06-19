@@ -203,7 +203,7 @@ class DecoderFastAI(nn.Module):
     def __init__(self, sizes, **kwargs):
         super(DecoderFastAI, self).__init__()
         self.bns = nn.ModuleList(
-            [nn.BatchNorm2d(size, **kwargs) for size in sizes] +
+            [nn.BatchNorm2d(size, **kwargs) for size in sizes[:-1]] +
             [nn.Identity()])
         doubleconvs = []
         cur_channels = 0

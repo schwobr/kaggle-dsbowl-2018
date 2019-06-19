@@ -266,7 +266,6 @@ class ToTensor(DualTransform):
 def get_train_tfms(size):
     return Compose([ToGray(),
                    RandomCrop(size),
-                   FixMask(),
                    ToTensor()])
 
 

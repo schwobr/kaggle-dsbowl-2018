@@ -26,8 +26,7 @@ def getNextFilePath(output_folder, base_name):
             file_name = os.path.splitext(f)[0]
             try:
                 if file_name.split('_')[:-1] == base_name.split('_'):
-                    split = file_name.split('.')
-                    split = split[-1].split('_')
+                    split = file_name.split('_')
                     file_num = int(split[-1])
                     if file_num > highest_num:
                         highest_num = file_num

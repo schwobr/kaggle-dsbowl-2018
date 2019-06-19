@@ -108,7 +108,7 @@ class DoubleConvFastAI(nn.Module):
         super(DoubleConvFastAI, self).__init__()
         if mid_channels is None:
             mid_channels = in_channels
-        self.relu = nn.Relu()
+        self.relu = nn.ReLU()
         self.conv1 = ConvRelu(
             in_channels, mid_channels, kernel_size, stride=stride,
             padding=padding, bias=bias, **kwargs)

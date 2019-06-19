@@ -231,7 +231,7 @@ class DecoderFastAI(nn.Module):
 
 class UnetFastAI(nn.Module):
     def __init__(self, encoder, n_classes, act='sigmoid'):
-        super(Unet, self).__init__()
+        super(UnetFastAI, self).__init__()
         if not isinstance(encoder, resnet.ResNet):
             raise ValueError('Encoder should be a resnet')
         self.encoder = encoder

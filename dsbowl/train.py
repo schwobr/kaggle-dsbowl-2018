@@ -36,7 +36,7 @@ def run():
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
     mod = get_model(cfg.MODEL, cfg.CLASSES, act=cfg.ACT,
-                    pretrained=cfg.PRETRAINED)
+                    pretrained=cfg.PRETRAINED, fastai=True)
     opt = optim.Adam(mod.parameters(), lr=cfg.LRS[-1], weight_decay=cfg.WD)
     net = Net(mod, opt, nn.BCELoss(), [mean_iou], cfg.MODELS_PATH)
 
@@ -50,7 +50,7 @@ def run():
         opt = optim.Adam(param_groups, weight_decay=cfg.WD)
         mod.opt = opt
 
-    save_name = f'{cfg.MODEL}_{cfg.EPOCHS}_{cfg.LRS[-1]}_{cfg.WD}'
+    save_name = f'{cfg.MODEL}_fastai_{cfg.EPOCHS}_{cfg.LRS[-1]}_{cfg.WD}'
     save_name += f'_{getNextFilePath(cfg.MODELS_PATH, save_name)}'
 
     writer = SummaryWriter(log_dir=cfg.LOG/save_name)

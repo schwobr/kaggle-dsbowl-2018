@@ -101,6 +101,31 @@ class DoubleConv(nn.Module):
         return x
 
 
+class DoubleConvFastAI(nn.Module):
+    def __init__(
+            self, in_channels, out_channels, kernel_size, mid_channels=None,
+            scale_factor=2, stride=1, padding=0, bias=True, **kwargs):
+        super(DoubleConvFastAI, self).__init__()
+        if mid_channels is None:
+            mid_channels = in_channels
+        self.relu = nn.Relu()
+        self.conv1 = ConvRelu(
+            in_channels, mid_channels, kernel_size, stride=stride,
+            padding=padding, bias=bias, **kwargs)
+        self.conv2 = ConvRelu(
+            mid_channels, in_channels, kernel_size, stride=stride,
+            padding=padding, bias=bias, **kwargs)
+        self.up = PixelShuffleICNR(
+            in_channels, out_channels, scale_factor=scale_factor, **kwargs)
+
+    def forward(self, x):
+        x = self.relu(x)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.up(x)
+        return x
+
+
 class UpConv(nn.Module):
     def __init__(
             self, in_channels, out_channels, kernel_size, stride=1,
@@ -157,7 +182,7 @@ class Decoder(nn.Module):
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
         self.doubleconv = DoubleConv(128, 64, 3, padding=1)
 
-    def forward(self, x, outputs):
+    def forward(self, outputs):
         ps = []
         p = None
         out0 = outputs.pop()
@@ -175,8 +200,67 @@ class Decoder(nn.Module):
 
 
 class DecoderFastAI(nn.Module):
-    def __init__(self, sizes):
+    def __init__(self, sizes, **kwargs):
         super(DecoderFastAI, self).__init__()
+        self.bns = nn.ModuleList(
+            [nn.BatchNorm2d(size, **kwargs) for size in sizes] +
+            [nn.Identity()])
+        doubleconvs = []
+        cur_channels = 0
+        for size in sizes[:-1]:
+            doubleconvs.append(
+                DoubleConvFastAI(
+                    size + cur_channels,
+                    (size + cur_channels) // 2, 3, padding=1))
+            cur_channels = (size+cur_channels)//2
+        doubleconvs.append(
+            DoubleConv(
+                sizes[-1] + cur_channels, sizes[-1] +
+                cur_channels, 3, padding=1))
+        self.doubleconvs = nn.ModuleList(doubleconvs)
+
+    def forward(self, x, outputs):
+        p = 0
+        for bn, doubleconv, out in zip(
+                self.bns, self.doubleconvs, outputs + [x]):
+            out = bn(out)
+            p = torch.cat([out, p], dim=1)
+            p = doubleconv(p)
+        return out + p
+
+
+class UnetFastAI(nn.Module):
+    def __init__(self, encoder, n_classes, act='sigmoid'):
+        super(Unet, self).__init__()
+        if not isinstance(encoder, resnet.ResNet):
+            raise ValueError('Encoder should be a resnet')
+        self.encoder = encoder
+        self.n_classes = n_classes
+        self.outputs = []
+
+        def hook(module, input, output):
+            self.outputs.append(output.detach())
+
+        layers = ['conv1', 'relu']+[f'layer{k+1}' for k in range(4)]
+        sizes = [3]
+        for layer in layers:
+            for name, module in self.encoder.named_children():
+                if name == layer:
+                    if name != 'conv1':
+                        module.register_forward_hook(hook)
+                    if name != 'relu':
+                        sizes.append(list(module.parameters())[-1].size(0))
+                    break
+        self.decoder = DecoderFastAI(sizes[::-1])
+        n_channels = list(self.decoder.parameters())[-1].size(0)
+        self.activation = get_activation(act, n_channels, n_classes)
+
+    def forward(self, x):
+        self.encoder(x)
+        x = self.decoder(x, self.outputs[::-1])
+        x = self.activation(x)
+        self.outputs = []
+        return x
 
 
 class Unet(nn.Module):

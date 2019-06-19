@@ -118,6 +118,28 @@ class UpConv(nn.Module):
         return x
 
 
+class PixelShuffleICNR(nn.Module):
+    def __init__(
+            self, in_channels, out_channels, bias=True, scale_factor=2, **
+            kwargs):
+        super(PixelShuffleICNR, self).__init__()
+        self.conv = nn.Conv2d(
+            in_channels, out_channels*scale_factor**2, 1, bias=bias, **kwargs)
+        icnr(self.conv.weight)
+        self.shuf = nn.PixelShuffle(scale_factor)
+        self.pad = nn.ReflectionPad2d((1, 0, 1, 0))
+        self.blur = nn.AvgPool2d(2, stride=1)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.relu(x)
+        x = self.shuf(x)
+        x = self.pad(x)
+        x = self.blur(x)
+        return x
+
+
 class Decoder(nn.Module):
     def __init__(self, sizes):
         super(Decoder, self).__init__()
@@ -152,6 +174,11 @@ class Decoder(nn.Module):
         return x
 
 
+class DecoderFastAI(nn.Module):
+    def __init__(self, sizes):
+        super(DecoderFastAI, self).__init__()
+
+
 class Unet(nn.Module):
     def __init__(self, encoder, n_classes, act='sigmoid'):
         super(Unet, self).__init__()
@@ -162,7 +189,7 @@ class Unet(nn.Module):
         self.outputs = []
 
         def hook(module, input, output):
-            self.outputs.append(output)
+            self.outputs.append(output.detach())
 
         layers = ['conv1', 'relu']+[f'layer{k+1}' for k in range(4)]
         sizes = []
@@ -201,3 +228,13 @@ def get_activation(act, in_channels, out_channels):
     else:
         raise ValueError('Invalid activation function')
     return nn.Sequential(conv, activation)
+
+
+def icnr(x, scale=2, init=nn.init.kaiming_normal_):
+    ni, nf, h, w = x.shape
+    ni2 = int(ni/(scale**2))
+    k = init(torch.zeros([ni2, nf, h, w])).transpose(0, 1)
+    k = k.contiguous().view(ni2, nf, -1)
+    k = k.repeat(1, 1, scale**2)
+    k = k.contiguous().view([nf, ni, h, w]).transpose(0, 1)
+    x.data.copy_(k)

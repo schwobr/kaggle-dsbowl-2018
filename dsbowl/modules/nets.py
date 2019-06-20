@@ -9,12 +9,17 @@ from modules.preds import predict_all, predict_TTA_all
 
 
 class Net:
-    def __init__(self, model, optim, loss, metrics, models_dir):
+    def __init__(self, model, optim, loss, metrics, models_dir, true_wd=True):
         self.model = model
         self.optim = optim
         self.loss = loss
         self.metrics = metrics
         self.models_dir = models_dir
+        self.wd = self.optim.param_groups[-1]['weight_decay']
+        if true_wd:
+            for pg in self.optim.param_groups:
+                pg['weigth_decay'] = 0
+        self.true_wd = true_wd
 
     def __call__(self, input):
         return self.model(input)
@@ -71,7 +76,7 @@ class Net:
                                 if frozen is not None:
                                     step += len(dls['train'])*frozen
                                 loss.backward()
-                                self.optim.step()
+                                self.step()
                                 if writer is not None:
                                     writer.add_scalar(
                                         'loss', loss.item(),
@@ -129,6 +134,13 @@ class Net:
         # load best model weights
         self.load(self.models_dir / save_name)
         return self.model, val_acc_history
+
+    def step(self):
+        if self.true_wd:
+            for pg in self.optim.param_groups:
+                for p in pg['params']:
+                    p.data.mul_(1-self.wd*pg['lr'])
+        self.optim.step()
 
     def score(self, dl, device):
         loss_tot = 0

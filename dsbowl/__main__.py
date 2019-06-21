@@ -1,8 +1,11 @@
 import train
 import predict
+import initialize
 from argparse import ArgumentParser
 
 if __name__ == '__main__':
+    initialize.run()
+
     parser = ArgumentParser()
     parser.add_argument(
         '-p', '--predict', help='create a submission using specified model',

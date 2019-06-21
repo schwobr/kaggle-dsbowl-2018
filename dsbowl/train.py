@@ -13,7 +13,7 @@ import torch.nn as nn
 from modules.dataset import CellsDataset, load_data
 from modules.preds import predict_TTA_all, create_submission
 from modules.metrics import mean_iou
-from modules.utils import getNextFilePath
+from modules.files import getNextFilePath, get_sizes
 import config as cfg
 
 
@@ -54,8 +54,9 @@ def run():
             SaveModelCallback(
                 learner, monitor='mean_iou', name=save_name)])
 
+    sizes = get_sizes(cfg.TEST_CSV, test_ids)
     learner.load(save_name)
-    preds, sizes = predict_TTA_all(
+    preds = predict_TTA_all(
         learner, size=(cfg.TEST_HEIGHT, cfg.TEST_WIDTH),
         overlap=cfg.TEST_OVERLAP, device=device)
     create_submission(preds, sizes, test_ids, folder=cfg.SUB_PATH)

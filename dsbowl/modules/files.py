@@ -23,15 +23,14 @@ def getNextFilePath(output_folder, base_name):
     highest_num = 0
     for f in os.listdir(output_folder):
         if os.path.isfile(output_folder / f):
-            file_name = os.path.splitext(f)[0]
             try:
-                if file_name.split('_')[:-1] == base_name.split('_'):
-                    split = file_name.split('_')
+                if f.split('_')[:-1] == base_name.split('_'):
+                    split = f.split('_')
                     file_num = int(split[-1])
                     if file_num > highest_num:
                         highest_num = file_num
             except ValueError:
-                'The file name "%s" is incorrect. Skipping' % file_name
+                'The file name "%s" is incorrect. Skipping' % f
 
     output_file = highest_num + 1
     return output_file

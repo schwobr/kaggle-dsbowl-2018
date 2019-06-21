@@ -4,9 +4,11 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 import torch
+from fastai.data_block import ItemList
 from fastai.vision.data import SegmentationItemList, SegmentationLabelList
-from fastai.vision.image import open_image, Image, image2np
+from fastai.vision.image import open_image, Image, image2np, pil2tensor
 from fastai.vision.transform import rand_pad
+import modules.transforms_functional as F
 import cv2
 import PIL
 import random
@@ -222,7 +224,7 @@ def get_affine(degrees, scale_ranges, shears):
 def load_data(path, size=256, bs=8, val_split=0.2,
               erosion=True, normalize=None, testset=None):
     train_list = (
-        SegmentationItemList.
+        CellImageList.
         from_folder(path, extensions=['.png']).
         filter_by_func(lambda fn: fn.parent.name == 'images').
         split_by_rand_pct(valid_pct=val_split).
@@ -240,6 +242,14 @@ def load_data(path, size=256, bs=8, val_split=0.2,
     return train_list
 
 
+class CellImageList(SegmentationItemList):
+    def open(self, fn):
+        x = super().open(fn).data
+        x = image2np(x)
+        x = F.to_gray(x)
+        return Image(pil2tensor(x))
+
+
 class MultiMasksList(SegmentationLabelList):
     def __init__(self, *args, erosion=True, **kwargs):
         super().__init__(*args, **kwargs)
@@ -253,15 +263,25 @@ class MultiMasksList(SegmentationLabelList):
             mask += open_image(fn / mask_file,
                                convert_mode='L').px
         if self.erosion:
-            mask = torch.tensor(
+            mask = pil2tensor(
                 cv2.erode(
                     image2np(mask).astype(np.uint8),
                     np.ones((3, 3),
                             np.uint8),
-                    iterations=1)).unsqueeze(0)
+                    iterations=1))
         return Image(mask.float())
 
     def analyze_pred(self, pred, thresh: float = 0.5):
         return (pred > thresh).float()
 
     def reconstruct(self, t): return Image(t)
+
+
+class TestImageList(ItemList):
+    def __init__(self, *args, max_size=1388, crop_size=256, overlap=64,
+                 rotations=(0, 90, 180, 270), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.max_size = max_size
+        self.crop_size = crop_size
+        self.overlap = overlap
+        self.rotations = rotations

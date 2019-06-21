@@ -1,64 +1,66 @@
-import os
-
 import numpy as np
 import pandas as pd
 import cv2
 
 from math import ceil
+from numbers import Number
 
-from tqdm.autonotebook import tqdm
+from tqdm import tqdm
 from skimage.morphology import label
 
-from fastai.basic_data import DatasetType
-
 import torch
-import torchvision.transforms.functional as TF
+import torch.nn as nn
 
-from dsbowl.modules.files import getNextFilePath
+from modules.files import getNextFilePath
+import modules.transforms_functional as F
 
 
-def predict_all(learner):
+def predict_all(model, dl):
     preds = []
-    sizes = []
     with torch.no_grad():
-        for X_test, sizes_test in tqdm(learner.dl(DatasetType.Test)):
-            sizes.append(sizes_test)
-            preds.append(learner.model(X_test).cpu())
-    sizes = torch.cat(sizes).numpy().squeeze()
+        for X_test in tqdm(dl):
+            if isinstance(X_test, list):
+                X_test = X_test[0]
+            preds.append(model(X_test).cpu())
     preds = torch.cat(preds)
-    preds = preds.squeeze().numpy()
-    return preds, sizes
+    return preds
 
 
-def predict_TTA_all(learner, size=(512, 512), overlap=64,
-                    rotations=(0, 90, 180, 270), device='cuda:0'):
+def predict_TTA_all(learner, sizes, size=512, overlap=64,
+                    out_channels=1, rotations=(0, 90, 180, 270)):
+    if isinstance(size, Number):
+        size = (size, size)
     preds = []
-    sizes = []
+    k = 0
     with torch.no_grad():
-        for X_test, sizes_test in tqdm(learner.dl(DatasetType.Test)):
-            sizes.append(sizes_test)
-            for tens, s in zip(X_test, sizes_test):
-                crops, pos, overlaps = get_crops(tens.cpu()[:, :s[0], :s[1]],
-                                                 size, overlap)
-                pred = torch.zeros((s[0], s[1]))
+        for X_test in tqdm(learner.data.test_dl):
+            for tens in X_test:
+                s = sizes[k]
+                crops, pos, overlaps = get_crops(
+                    tens.cpu()[0, :, :s[0],
+                               :s[1]],
+                    size, overlap, out_channels=out_channels)
+                pred = torch.zeros((1, out_channels, *s))
                 for crop, ((x_min, y_min), (x_max, y_max)) in zip(crops, pos):
-                    img = TF.to_pil_image(crop)
-                    res = predict_TTA(learner, img, size, rotations, device)
-                    pred[x_min:x_max, y_min:y_max] += res[
-                        :x_max-x_min, :y_max-y_min]
+                    img = F.tensor_to_img(crop)
+                    res = predict_TTA(learner.model, img, size,
+                                      rotations, learner.data.device,
+                                      out_channels)
+                    pred[:, :, x_min:x_max, y_min:y_max] += res[
+                        :, :, :x_max-x_min, :y_max-y_min]
                 pred /= overlaps
-                preds.append(pred.numpy())
-    sizes = torch.cat(sizes).cpu().numpy().squeeze()
-    return preds, sizes
+                preds.append(pred)
+                k += 1
+    return preds
 
 
-def get_crops(img, size, overlap):
+def get_crops(img, size, overlap, out_channels=1):
     n, h, w = img.size()
-    n_h = max(1, ceil((h-size[0])/(size[0]-overlap)))
-    n_w = max(1, ceil((w-size[1])/(size[1]-overlap)))
+    n_h = max(1, ceil((h-overlap)/(size[0]-overlap)))
+    n_w = max(1, ceil((w-overlap)/(size[1]-overlap)))
     crops = []
     pos = []
-    overlaps = torch.zeros((h, w))
+    overlaps = torch.zeros((1, out_channels, h, w))
     for i in range(n_h):
         for j in range(n_w):
             crop = torch.zeros((n, size[0], size[1]))
@@ -68,32 +70,32 @@ def get_crops(img, size, overlap):
             y_max = min(w, (j+1)*size[1]-j*overlap)
             crop[:, :x_max-x_min, :y_max-y_min] = img[:, x_min:x_max,
                                                       y_min:y_max]
-            crops.append(crop)
-            overlaps[x_min:x_max, y_min:y_max] += 1
+            crops.append(crop.unsqueeze(0))
+            overlaps[:, :, x_min:x_max, y_min:y_max] += 1
             pos.append(((x_min, y_min), (x_max, y_max)))
     return crops, pos, overlaps
 
 
-def predict_TTA(learner, img, size, rotations, device):
-    flipped = TF.hflip(img)
-    res = torch.zeros(size)
+def predict_TTA(model, img, size, rotations, device, out_channels):
+    flipped = F.hflip(img)
+    res = torch.zeros((1, out_channels, *size))
+    act = nn.Sigmoid() if out_channels == 1 else nn.Softmax()
     for angle in rotations:
-        rot = TF.rotate(img, angle)
-        rot = TF.to_tensor(rot).unsqueeze(0).to(device)
-        rot_flipped = TF.rotate(flipped, angle)
-        rot_flipped = TF.to_tensor(rot_flipped).unsqueeze(0).to(device)
+        rot = F.rotate(img, angle)
+        rot = F.img_to_tensor(rot).to(device)
+        rot_flipped = F.rotate(flipped, angle)
+        rot_flipped = F.img_to_tensor(rot_flipped).to(device)
 
-        out_rot = learner.model(rot).cpu().squeeze()
-        out_rot = torch.sigmoid(out_rot).squeeze()
-        out_rot = TF.rotate(TF.to_pil_image(out_rot), -angle)
-        out_rot = TF.to_tensor(out_rot).squeeze()
+        out_rot = model(rot).cpu()
+        out_rot = act(out_rot)
+        out_rot = F.rotate(F.tensor_to_img(out_rot), -angle)
+        out_rot = F.img_to_tensor(out_rot)
 
-        out_flipped = learner.model(rot_flipped).cpu().squeeze()
-        out_flipped = torch.sigmoid(out_flipped).squeeze()
-        out_flipped = TF.hflip(
-            TF.rotate(TF.to_pil_image(out_flipped), -angle))
-        out_flipped = TF.to_tensor(out_flipped).squeeze()
-
+        out_flipped = model(rot_flipped).cpu()
+        out_flipped = act(out_flipped)
+        out_flipped = F.hflip(
+            F.rotate(F.tensor_to_img(out_flipped), -angle))
+        out_flipped = F.img_to_tensor(out_flipped)
         res += (out_rot+out_flipped)/2
     res /= len(rotations)
     return res
@@ -124,14 +126,15 @@ def prob_to_rles(x, cutoff=0.5):
 
 
 def create_submission(preds, sizes, test_ids, folder, resize=False):
+    preds = preds
     if resize:
         preds_test_upsampled = []
         for i, pred in enumerate(preds):
-            preds_test_upsampled.append(resize(
-                                        pred, (sizes[i, 0], sizes[i, 1]),
-                                        mode='constant', preserve_range=True))
+            pred = F.tensor_to_img(pred)
+            preds_test_upsampled.append(cv2.resize(
+                                        pred, (sizes[i, 0], sizes[i, 1])))
     else:
-        preds_test_upsampled = preds
+        preds_test_upsampled = [F.tensor_to_img(pred) for pred in preds]
     new_test_ids = []
     rles = []
     for n, id_ in enumerate(tqdm(test_ids)):
@@ -147,6 +150,6 @@ def create_submission(preds, sizes, test_ids, folder, resize=False):
         lambda x: ' '.join(str(y) for y in x))
 
     base_name = 'sub_dsbowl_pt'
-    sub_file = os.path.join(
-        folder, base_name+f'_{getNextFilePath(folder, base_name)}.csv')
+    sub_file = folder / (base_name +
+                         f'_{getNextFilePath(folder, base_name)}.csv')
     sub.to_csv(sub_file, index=False)

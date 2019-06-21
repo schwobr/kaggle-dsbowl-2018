@@ -4,7 +4,6 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 import torch
-from fastai.data_block import ItemList
 from fastai.vision.data import SegmentationItemList, SegmentationLabelList
 from fastai.vision.image import open_image, Image, image2np, pil2tensor
 from fastai.vision.transform import rand_pad
@@ -222,7 +221,7 @@ def get_affine(degrees, scale_ranges, shears):
 
 
 def load_data(path, size=256, bs=8, val_split=0.2,
-              erosion=True, normalize=None, testset=None):
+              erosion=True, normalize=None, classes=['nucl'], testset=None):
     train_list = (
         CellImageList.
         from_folder(path, extensions=['.png']).
@@ -230,7 +229,7 @@ def load_data(path, size=256, bs=8, val_split=0.2,
         split_by_rand_pct(valid_pct=val_split).
         label_from_func(
             lambda x: x.parents[1] / 'masks', label_cls=MultiMasksList,
-            classes=['nucl'], erosion=erosion).transform(
+            classes=classes, erosion=erosion).transform(
             (rand_pad(0, size), rand_pad(0, size)), tfm_y=True))
     if testset:
         train_list.test = testset
@@ -247,7 +246,7 @@ class CellImageList(SegmentationItemList):
         x = super().open(fn).data
         x = image2np(x)
         x = F.to_gray(x)
-        return Image(pil2tensor(x))
+        return Image(pil2tensor(x, np.float32))
 
 
 class MultiMasksList(SegmentationLabelList):
@@ -268,8 +267,8 @@ class MultiMasksList(SegmentationLabelList):
                     image2np(mask).astype(np.uint8),
                     np.ones((3, 3),
                             np.uint8),
-                    iterations=1))
-        return Image(mask.float())
+                    iterations=1), np.float32)
+        return Image(mask)
 
     def analyze_pred(self, pred, thresh: float = 0.5):
         return (pred > thresh).float()
@@ -277,11 +276,17 @@ class MultiMasksList(SegmentationLabelList):
     def reconstruct(self, t): return Image(t)
 
 
-class TestImageList(ItemList):
-    def __init__(self, *args, max_size=1388, crop_size=256, overlap=64,
-                 rotations=(0, 90, 180, 270), **kwargs):
+class TestImageList(CellImageList):
+    def __init__(self, *args, max_size=1388, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_size = max_size
-        self.crop_size = crop_size
-        self.overlap = overlap
-        self.rotations = rotations
+
+    def open(self, fn):
+        x = super().open(fn).data
+        x = image2np(x)
+        pad_width = (
+            (0, self.max_size - x.shape[0]),
+            (0, self.max_size - x.shape[1]),
+            (0, 0))
+        x = F.pad(x, pad_width)
+        return Image(pil2tensor(x, np.float32))

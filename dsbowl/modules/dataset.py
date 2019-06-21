@@ -12,7 +12,7 @@ import PIL
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-from dsbowl.modules.files import getNextId
+from modules.files import getNextId
 
 
 class CellsDataset(Dataset):

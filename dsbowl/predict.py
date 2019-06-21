@@ -9,10 +9,10 @@ import fastai.vision.models as mod
 
 import torch
 import torch.nn as nn
-from dsbowl.modules.dataset import CellsDataset, load_data
-from dsbowl.modules.preds import predict_TTA_all, create_submission
-from dsbowl.modules.metrics import mean_iou
-import dsbowl.config as cfg
+from modules.dataset import CellsDataset, load_data
+from modules.preds import predict_TTA_all, create_submission
+from modules.metrics import mean_iou
+import config as cfg
 
 
 def run(model):

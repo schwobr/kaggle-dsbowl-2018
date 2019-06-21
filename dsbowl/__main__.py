@@ -1,4 +1,5 @@
-from dsbowl import train, predict
+import train
+import predict
 from argparse import ArgumentParser
 
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 # This file may be used to create an environment using:
 # $ conda create --name <env> --file <this file>
 # platform: linux-64
+absl-py=0.7.1=pypi_0
 attrs=19.1.0=py36_1
 backcall=0.1.0=py36_0
 beautifulsoup4=4.7.1=pypi_0
@@ -8,8 +9,8 @@ blas=1.0=mkl
 bleach=3.1.0=py36_0
 blis=0.2.4=pypi_0
 bottleneck=1.2.1=pypi_0
-ca-certificates=2019.1.23=0
-certifi=2019.3.9=py36_0
+ca-certificates=2019.5.15=0
+certifi=2019.6.16=py36_0
 cffi=1.12.3=py36h2e261b9_0
 chardet=3.0.4=pypi_0
 cloudpickle=1.0.0=py_0
@@ -29,8 +30,10 @@ fastai=1.0.52=pypi_0
 fastprogress=0.1.21=pypi_0
 fontconfig=2.13.0=h9420a91_0
 freetype=2.9.1=h8a8886c_1
+future=0.17.1=pypi_0
 glib=2.56.2=hd408876_0
 gmp=6.1.2=h6c8ec71_1
+grpcio=1.21.1=pypi_0
 gst-plugins-base=1.14.0=hbbd80ab_1
 gstreamer=1.14.0=hb453b48_1
 icu=58.2=h9c2bf20_1
@@ -63,6 +66,7 @@ libtiff=4.0.10=h2733197_2
 libuuid=1.0.3=h1bed415_2
 libxcb=1.13=h1bed415_1
 libxml2=2.9.9=he19cac6_0
+markdown=3.1.1=pypi_0
 markupsafe=1.1.1=py36h7b6447c_0
 matplotlib=3.0.3=py36h5429711_0
 mistune=0.8.4=py36h7b6447c_0
@@ -85,7 +89,7 @@ numpy-base=1.16.3=py36hde5b4d6_0
 nvidia-ml-py3=7.352.0=pypi_0
 olefile=0.46=py36_0
 opencv-python=4.1.0.25=pypi_0
-openssl=1.1.1b=h7b6447c_1
+openssl=1.1.1c=h7b6447c_1
 packaging=19.0=pypi_0
 pandas=0.24.2=pypi_0
 pandoc=2.2.3.2=0
@@ -100,6 +104,7 @@ plac=0.9.6=pypi_0
 preshed=2.0.1=pypi_0
 prometheus_client=0.6.0=py36_0
 prompt_toolkit=2.0.9=py36_0
+protobuf=3.8.0=pypi_0
 ptyprocess=0.6.0=py36_0
 pycparser=2.19=py36_0
 pygments=2.4.0=py_0
@@ -131,6 +136,7 @@ spacy=2.1.4=pypi_0
 sqlite=3.28.0=h7b6447c_0
 srsly=0.0.5=pypi_0
 tabulate=0.8.3=pypi_0
+tb-nightly=1.14.0a20190612=pypi_0
 terminado=0.8.2=py36_0
 testfixtures=6.8.2=pypi_0
 testpath=0.4.2=py36_0
@@ -138,6 +144,7 @@ text-unidecode=1.2=pypi_0
 thinc=7.0.4=pypi_0
 tk=8.6.8=hbc83047_0
 toolz=0.9.0=py36_0
+torchsummary=1.5.1=pypi_0
 torchvision=0.2.2=py_3
 tornado=6.0.2=py36h7b6447c_0
 tqdm=4.32.1=pypi_0
@@ -147,6 +154,7 @@ urllib3=1.24.3=pypi_0
 wasabi=0.2.2=pypi_0
 wcwidth=0.1.7=py36_0
 webencodings=0.5.1=py36_1
+werkzeug=0.15.4=pypi_0
 wheel=0.33.2=py36_0
 widgetsnbextension=3.4.2=py36_0
 xz=5.2.4=h14c3975_4

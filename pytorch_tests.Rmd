@@ -139,8 +139,7 @@ preds = net.predict(testloader, device, sizes, size=cfg.TEST_SIZE, overlap=cfg.T
 ```
 
 ```{python}
-def test2(s):
-    s.lower()
+create_submission(preds, sizes, ids, folder=cfg.SUB_PATH)
 ```
 
 ```{python}
@@ -190,13 +189,173 @@ sys.getsizeof(d)
 
 ```{python}
 from fastai.vision.models import DynamicUnet
-from fastai.vision.learner import create_body
+from fastai.vision.learner import unet_learner
 from torchvision.models import resnet34
+import collections
+from typing import Callable
+import functools
+
+def _default_split(m:nn.Module): return (m[1],)
+# Split a resnet style model
+def _resnet_split(m:nn.Module): return (m[0][6],m[1])
+# Split squeezenet model on maxpool layers
+def _squeezenet_split(m:nn.Module): return (m[0][0][5], m[0][0][8], m[1])
+def _densenet_split(m:nn.Module): return (m[0][0][7],m[1])
+def _vgg_split(m:nn.Module): return (m[0][0][22],m[1])
+def _alexnet_split(m:nn.Module): return (m[0][0][6],m[1])
+
+_default_meta    = {'cut':None, 'split':_default_split}
+_resnet_meta     = {'cut':-2, 'split':_resnet_split }
+_squeezenet_meta = {'cut':-1, 'split': _squeezenet_split}
+_densenet_meta   = {'cut':-1, 'split':_densenet_split}
+_vgg_meta        = {'cut':-1, 'split':_vgg_split}
+_alexnet_meta = {'cut':-1, 'split':_alexnet_split}
+
+model_meta = {
+    resnet34: {**_resnet_meta}}
+
+def children(m):
+    "Get children of `m`."
+    return list(m.children())
+
+def num_children(m):
+    "Get number of children modules in `m`."
+    return len(children(m))
+
+class PrePostInitMeta(type):
+    "A metaclass that calls optional `__pre_init__` and `__post_init__` methods"
+    def __new__(cls, name, bases, dct):
+        x = super().__new__(cls, name, bases, dct)
+        old_init = x.__init__
+        def _pass(self): pass
+        @functools.wraps(old_init)
+        def _init(self,*args,**kwargs):
+            self.__pre_init__()
+            old_init(self, *args,**kwargs)
+            self.__post_init__()
+        x.__init__ = _init
+        if not hasattr(x,'__pre_init__'):  x.__pre_init__  = _pass
+        if not hasattr(x,'__post_init__'): x.__post_init__ = _pass
+        return x
+
+class Module(nn.Module, metaclass=PrePostInitMeta):
+    "Same as `nn.Module`, but no need for subclasses to call `super().__init__`"
+    def __pre_init__(self): super().__init__()
+    def __init__(self): pass
+
+class ParameterModule(Module):
+    "Register a lone parameter `p` in a module."
+    def __init__(self, p): self.val = p
+    def forward(self, x): return x
+
+def children_and_parameters(m):
+    "Return the children of `m` and its direct parameters not registered in modules."
+    children = list(m.children())
+    children_p = sum([[id(p) for p in c.parameters()] for c in m.children()],[])
+    for p in m.parameters():
+        if id(p) not in children_p: children.append(ParameterModule(p))
+    return children
+
+flatten_model = lambda m: sum(map(flatten_model,children_and_parameters(m)),[]) if num_children(m) else [m]
+
+
+def listify(p=None, q=None):
+    "Make `p` listy and the same length as `q`."
+    if p is None: p=[]
+    elif isinstance(p, str):          p = [p]
+    elif not isinstance(p, collections.Iterable): p = [p]
+    #Rank 0 tensors in PyTorch are Iterable but don't have a length.
+    else:
+        try: a = len(p)
+        except: p = [p]
+    n = q if type(q)==int else len(p) if q is None else len(q)
+    if len(p)==1: p = p * n
+    assert len(p)==n, f'List len mismatch ({len(p)} vs {n})'
+    return list(p)
+
+def cnn_config(arch):
+    "Get the metadata associated with `arch`."
+    torch.backends.cudnn.benchmark = True
+    return model_meta.get(arch, _default_meta)
+
+def cond_init(m, init_fn):
+    if not isinstance(m, (nn.BatchNorm1d,nn.BatchNorm2d,nn.BatchNorm3d)):
+        if hasattr(m, 'weight'): init_fn(m.weight)            
+        if hasattr(m, 'bias') and hasattr(m.bias, 'data'): m.bias.data.fill_(0.)
+            
+def apply_init(m, init_fn):
+    m.apply(lambda x: cond_init(x, init_fn))
+
+def split_model_idx(model, idxs):
+    "Split `model` according to the indexes in `idxs`."
+    layers = flatten_model(model)
+    if idxs[0] != 0: idxs = [0] + idxs
+    if idxs[-1] != len(layers): idxs.append(len(layers))
+    return [nn.Sequential(*layers[i:j]) for i,j in zip(idxs[:-1],idxs[1:])]
+
+def first_layer(m):
+    "Retrieve first layer in a module `m`."
+    return flatten_model(m)[0]
+
+def split_model(model=None, splits=None):
+    "Split `model` according to the layers in `splits`."
+    splits = listify(splits)
+    if isinstance(splits[0], nn.Module):
+        layers = flatten_model(model)
+        idxs = [layers.index(first_layer(s)) for s in splits]
+        return split_model_idx(model, idxs)
+    return [nn.Sequential(*s) for s in splits]
+
+meta = cnn_config(resnet34)
+split_on = meta['split']
 unet = DynamicUnet(create_body(resnet34, pretrained=False), 1)
+if isinstance(split_on,Callable): split_on = split_on(unet)
+split_model(unet, split_on)
+apply_init(unet[2], nn.init.kaiming_normal_)
 ```
 
 ```{python}
 unet
+```
+
+```{python}
+device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+
+opt = optim.Adam(unet.parameters(), lr=cfg.LRS[0], weight_decay=cfg.WD, betas=(0.9, 0.99))
+net = Net(unet, opt, nn.BCEWithLogitsLoss(), [mean_iou], cfg.MODELS_PATH)
+```
+
+```{python}
+scheduler = OneCycleScheduler(cfg.LRS, len(tl))
+save_name = f'{cfg.MODEL}_fastai_{cfg.EPOCHS}_{cfg.LRS[0]}_{cfg.WD}'
+save_name += f'_{getNextFilePath(cfg.MODELS_PATH, save_name)}'
+print(save_name)
+```
+
+```{python}
+writer = SummaryWriter(log_dir='/work/stages/schwob/runs/'+save_name)
+```
+
+```{python}
+writer.add_graph(unet, input_to_model=next(iter(tl))[0], operator_export_type='RAW')
+```
+
+```{python}
+net.fit(dls, cfg.EPOCHS, save_name, device, writer=writer, scheduler=scheduler)
+```
+
+```{python}
+import collections
+def is_iter(x): return isinstance(x, collections.Iterable)
+def listify(x, y):
+    if not is_iter(x): x=[x]
+    n = y if type(y)==int else len(y)
+    if len(x)==1: x = x * n
+    return x
+```
+
+```{python}
+listify(0, [0.1, 0.1])
 ```
 
 ```{python}

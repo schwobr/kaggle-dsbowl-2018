@@ -41,12 +41,12 @@ def run():
 
     learner = unet_learner(
         db, models[cfg.MODEL],
-        pretrained=False, metrics=[mean_iou],
+        pretrained=cfg.PRETRAINED, metrics=[mean_iou],
         loss_func=nn.BCEWithLogitsLoss(),
         wd=cfg.WD, model_dir=cfg.MODELS_PATH)
 
-    save_name = f'{cfg.MODEL}_{cfg.EPOCHS}_'
-    save_name += f'{cfg.LR}_{cfg.WD}_{getNextFilePath(cfg.MODELS_PATH)}'
+    save_name = f'{cfg.MODEL}_fastai_{cfg.EPOCHS}_{cfg.LRS[-1]}_{cfg.WD}'
+    save_name += f'_{getNextFilePath(cfg.MODELS_PATH, save_name)}'
 
     learner.fit_one_cycle(
         cfg.EPOCHS, cfg.LR,

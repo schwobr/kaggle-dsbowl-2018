@@ -1,18 +1,17 @@
 from skimage.io import imread, imshow
 import os
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 import torch
 from fastai.vision.data import SegmentationItemList, SegmentationLabelList
-from fastai.vision.image import open_image, Image
+from fastai.vision.image import open_image, Image, image2np
 from fastai.vision.transform import rand_pad
 import cv2
 import PIL
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
 from dsbowl.modules.files import getNextId
 
 
@@ -143,56 +142,6 @@ class CellsDataset(Dataset):
         return mask
 
 
-def load_train_data(path, height=256, width=256, bs=8, val_split=0.2,
-                    erosion=True, normalize=None, crop=True,
-                    grayscale=True, aug=True, shuffle=True):
-    ids = next(os.walk(path))[1]
-    if aug:
-        aug_ids = []
-        for i in ids:
-            augs_path = os.path.join(path, i, 'augs')
-            aug_ids += [f'{i}_{aug_i}' for aug_i in next(
-                os.walk(augs_path))[1]]
-        ids += aug_ids
-    if shuffle:
-        ids = random.sample(ids, len(ids))
-    n_ids = len(ids)
-    k = (1-val_split)*random.random()
-    trainset = CellsDataset(path, ids[:int(k*n_ids)]+ids[
-                            int((k+val_split)*n_ids):], height, width,
-                            erosion=erosion, normalize=normalize, crop=crop,
-                            grayscale=grayscale, aug=aug)
-    valset = CellsDataset(path, ids[int(k*n_ids):int((k+val_split)*n_ids)],
-                          height, width, erosion=erosion, normalize=normalize,
-                          crop=crop, grayscale=grayscale, aug=aug)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=bs,
-                                              shuffle=True, num_workers=0)
-    valloader = torch.utils.data.DataLoader(valset, batch_size=bs,
-                                            shuffle=False, num_workers=0)
-    return trainloader, valloader
-
-
-def get_stats(path, channels=3, bs=8, num_workers=0):
-    dataset = CellsDataset(
-        path, next(os.walk(path))[1],
-        train=False, crop=True, erosion=False, grayscale=True, aug=False)
-    dl = DataLoader(dataset, batch_size=bs, num_workers=num_workers,
-                    shuffle=False)
-    mean = torch.zeros(channels)
-    std = torch.zeros(channels)
-    nb_samples = 0.
-    for data, _ in dl:
-        batch_samples = data.size(0)
-        data = data.view(batch_samples, channels, -1)
-        mean += data.mean(2).sum(0)
-        std += data.std(2).sum(0)
-        nb_samples += batch_samples
-
-    mean /= nb_samples
-    std /= nb_samples
-    return mean, std
-
-
 def augment_data(path, hue_range=0.05, brightness_range=0.2,
                  contrast_range=0.2, p_hue=0.8, p_brightness=0.8,
                  p_contrast=0.8, max_rot=180, max_scale=0.1,
@@ -275,10 +224,10 @@ def load_data(path, size=256, bs=8, val_split=0.2,
     train_list = (
         SegmentationItemList.
         from_folder(path, extensions=['.png']).
-        filter_by_func(lambda fn: Path(fn).parent.name == 'images').
+        filter_by_func(lambda fn: fn.parent.name == 'images').
         split_by_rand_pct(valid_pct=val_split).
         label_from_func(
-            lambda x: x.parents[1] / 'masks/', label_cls=MultiMasksList,
+            lambda x: x.parents[1] / 'masks', label_cls=MultiMasksList,
             classes=['nucl'], erosion=erosion).transform(
             (rand_pad(0, size), rand_pad(0, size)), tfm_y=True))
     if testset:
@@ -298,15 +247,15 @@ class MultiMasksList(SegmentationLabelList):
 
     def open(self, fn):
         mask_files = next(os.walk(fn))[2]
-        mask = open_image(os.path.join(fn, mask_files.pop(0)),
+        mask = open_image(fn / mask_files.pop(0),
                           convert_mode='L').px
         for mask_file in mask_files:
-            mask += open_image(os.path.join(fn, mask_file),
+            mask += open_image(fn / mask_file,
                                convert_mode='L').px
         if self.erosion:
             mask = torch.tensor(
                 cv2.erode(
-                    mask.numpy().squeeze().astype(np.uint8),
+                    image2np(mask).astype(np.uint8),
                     np.ones((3, 3),
                             np.uint8),
                     iterations=1)).unsqueeze(0)

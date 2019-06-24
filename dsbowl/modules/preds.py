@@ -15,13 +15,13 @@ from modules.files import getNextFilePath
 import modules.transforms_functional as F
 
 
-def predict_all(model, dl):
+def predict_all(learner):
     preds = []
     with torch.no_grad():
-        for X_test in tqdm(dl):
+        for X_test in tqdm(learner.data.test_dl):
             if isinstance(X_test, list):
                 X_test = X_test[0]
-            preds.append(model(X_test).cpu())
+            preds.append(learner.model(X_test).cpu())
     preds = torch.cat(preds)
     return preds
 

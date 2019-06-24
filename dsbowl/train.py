@@ -49,10 +49,17 @@ def run():
     save_name += f'_{getNextFilePath(cfg.MODELS_PATH, save_name)}'
 
     learner.fit_one_cycle(
-        cfg.EPOCHS, cfg.LR,
+        cfg.EPOCHS, slice(cfg.LR),
         callbacks=[
             SaveModelCallback(
                 learner, monitor='mean_iou', name=save_name)])
+
+    if cfg.UNFROZE_EPOCHS:
+        learner.fit_one_cycle(
+            cfg.UNFROZE_EPOCHS, slice(cfg.LR),
+            callbacks=[
+                SaveModelCallback(
+                    learner, monitor='mean_iou', name=save_name)])
 
     sizes = get_sizes(cfg.TEST_CSV, test_ids)
     learner.load(save_name)

@@ -32,5 +32,5 @@ EPOCHS = 10
 UNFROZE_EPOCHS = 10
 PRETRAINED = False
 MODEL = 'resnet34'
-CLASSES = 1
+CLASSES = ['nucl']
 ACT = 'sigmoid'

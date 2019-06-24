@@ -4,14 +4,13 @@ import warnings
 
 import numpy as np
 
-from fastai.vision.learner import unet_learner
 import fastai.vision.models as mod
 from fastai.callbacks import SaveModelCallback
 
-import torch
 import torch.nn as nn
-from modules.dataset import CellsDataset, load_data
-from modules.preds import predict_TTA_all, create_submission
+from modules.learner import UnetLearner
+from modules.dataset import load_data
+from modules.preds import create_submission
 from modules.metrics import mean_iou
 from modules.files import getNextFilePath, get_sizes
 import config as cfg
@@ -30,22 +29,21 @@ def run():
 
     test_ids = next(os.walk(cfg.TEST_PATH))[1]
 
-    testset = CellsDataset(
-        cfg.TEST_PATH, test_ids, height=cfg.MAX_HEIGHT, width=cfg.MAX_WIDTH,
-        train=False, erosion=True, crop=False, resize=False, aug=False,
-        pad=True, normalize=(cfg.MEAN, cfg.STD))
+    db = load_data(
+        cfg.TRAIN_PATH, size=cfg.TRAIN_WIDTH, bs=cfg.BATCH_SIZE,
+        classes=cfg.CLASSES, testpath=cfg.TEST_PATH, max_size=cfg.MAX_SIZE)
 
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    db = load_data(cfg.TRAIN_PATH, size=cfg.TRAIN_WIDTH,
-                   bs=cfg.BATCH_SIZE, testset=testset)
+    if len(cfg.CLASSES) < 3:
+        loss_func = nn.BCEWithLogitsLoss()
+    else:
+        loss_func = nn.CrossEntropyLoss()
 
-    learner = unet_learner(
+    learner = UnetLearner(
         db, models[cfg.MODEL],
         pretrained=cfg.PRETRAINED, metrics=[mean_iou],
-        loss_func=nn.BCEWithLogitsLoss(),
-        wd=cfg.WD, model_dir=cfg.MODELS_PATH)
+        loss_func=loss_func, wd=cfg.WD, model_dir=cfg.MODELS_PATH)
 
-    save_name = f'{cfg.MODEL}_fastai_{cfg.EPOCHS}_{cfg.LRS[-1]}_{cfg.WD}'
+    save_name = f'{cfg.MODEL}_fastai_{cfg.EPOCHS}_{cfg.LR}_{cfg.WD}'
     save_name += f'_{getNextFilePath(cfg.MODELS_PATH, save_name)}'
 
     learner.fit_one_cycle(
@@ -63,7 +61,9 @@ def run():
 
     sizes = get_sizes(cfg.TEST_CSV, test_ids)
     learner.load(save_name)
-    preds = predict_TTA_all(
-        learner, size=(cfg.TEST_HEIGHT, cfg.TEST_WIDTH),
-        overlap=cfg.TEST_OVERLAP, device=device)
+
+    preds = learner.predict_all(
+        sizes, size=cfg.TEST_SIZE, overlap=cfg.TEST_OVERLAP,
+        out_channels=len(cfg.CLASSES))
+
     create_submission(preds, sizes, test_ids, folder=cfg.SUB_PATH)

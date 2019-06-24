@@ -79,7 +79,7 @@ def get_crops(img, size, overlap, out_channels=1):
 def predict_TTA(model, img, size, rotations, device, out_channels):
     flipped = F.hflip(img)
     res = torch.zeros((1, out_channels, *size))
-    act = nn.Sigmoid() if out_channels == 1 else nn.Softmax()
+    act = nn.Sigmoid() if out_channels < 3 else nn.Softmax()
     for angle in rotations:
         rot = F.rotate(img, angle)
         rot = F.img_to_tensor(rot).to(device)

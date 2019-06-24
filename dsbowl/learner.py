@@ -3,9 +3,7 @@ from fastai.vision.learner import unet_learner
 
 
 class UnetLearner(Learner):
-    def __new__(cls, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         learner = unet_learner(*args, **kwargs)
-        new_learner = super(UnetLearner, cls).__new__(cls)
         for v in vars(learner):
-            setattr(new_learner, v, getattr(learner, v))
-        return new_learner
+            setattr(self, v, getattr(learner, v))

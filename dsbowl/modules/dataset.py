@@ -1,16 +1,20 @@
-from skimage.io import imread
-import os
-from torchvision import transforms
-import torchvision.transforms.functional as TF
-import torch
-from fastai.vision.data import SegmentationItemList, SegmentationLabelList
-from fastai.vision.image import open_image, Image, image2np, pil2tensor
-from fastai.vision.transform import rand_pad
-import modules.transforms_functional as F
 import cv2
 import PIL
 import random
 import numpy as np
+import os
+
+from skimage.io import imread
+
+from torchvision import transforms
+import torchvision.transforms.functional as TF
+import torch
+
+from fastai.vision.data import SegmentationItemList, SegmentationLabelList
+from fastai.vision.image import open_image, Image, image2np, pil2tensor
+from fastai.vision.transform import rand_pad
+
+import modules.transforms_functional as F
 from modules.files import getNextId
 
 

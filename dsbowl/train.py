@@ -1,13 +1,13 @@
 import os
 import random
 import warnings
-
 import numpy as np
 
 import fastai.vision.models as mod
 from fastai.callbacks import SaveModelCallback
 
 import torch.nn as nn
+
 from modules.learner import UnetLearner
 from modules.dataset import load_data
 from modules.preds import create_submission

@@ -24,7 +24,7 @@ def getNextFilePath(output_folder, base_name):
     for f in output_folder.iterdir():
         if f.is_file():
             try:
-                f = str(f.name.with_suffix(''))
+                f = str(f.with_suffix('').name)
                 if f.split('_')[:-1] == base_name.split('_'):
                     split = f.split('_')
                     file_num = int(split[-1])

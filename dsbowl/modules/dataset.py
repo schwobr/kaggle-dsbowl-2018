@@ -220,12 +220,18 @@ def get_affine(degrees, scale_ranges, shears):
     return angle, scale, shear
 
 
-def load_data(path, size=256, bs=8, val_split=0.2,
+def load_data(path, size=256, bs=8, val_split=0.2, use_augs=True,
               erosion=True, normalize=None, classes=['nucl'], testset=None):
+    if use_augs:
+        def filter_func(fn): return fn.parent.name == 'images'
+    else:
+        def filter_func(fn): return fn.parent.name == 'images' and \
+                                not fn.with_suffix('').name.isdigit()
+
     train_list = (
         CellImageList.
         from_folder(path, extensions=['.png']).
-        filter_by_func(lambda fn: fn.parent.name == 'images').
+        filter_by_func(filter_func).
         split_by_rand_pct(valid_pct=val_split).
         label_from_func(
             lambda x: x.parents[1] / 'masks', label_cls=MultiMasksList,

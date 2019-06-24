@@ -46,8 +46,8 @@ def predict_TTA_all(learner, sizes, size=512, overlap=64,
                     res = predict_TTA(learner.model, img, size,
                                       rotations, learner.data.device,
                                       out_channels)
-                    pred[:, :, x_min:x_max, y_min:y_max] += res[
-                        :, :, :x_max-x_min, :y_max-y_min]
+                    pred[..., x_min:x_max, y_min:y_max] += res[
+                         ..., :x_max-x_min, :y_max-y_min]
                 pred /= overlaps
                 preds.append(pred)
                 k += 1
@@ -71,7 +71,7 @@ def get_crops(img, size, overlap, out_channels=1):
             crop[:, :x_max-x_min, :y_max-y_min] = img[:, x_min:x_max,
                                                       y_min:y_max]
             crops.append(crop.unsqueeze(0))
-            overlaps[:, :, x_min:x_max, y_min:y_max] += 1
+            overlaps[..., x_min:x_max, y_min:y_max] += 1
             pos.append(((x_min, y_min), (x_max, y_max)))
     return crops, pos, overlaps
 

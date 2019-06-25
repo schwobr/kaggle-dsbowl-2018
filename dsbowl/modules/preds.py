@@ -4,10 +4,11 @@ import cv2
 
 from math import ceil
 from numbers import Number
-
 from tqdm import tqdm
+
 from skimage.morphology import label
 
+from fastai.vision.image import image2np
 import torch
 import torch.nn as nn
 
@@ -129,11 +130,11 @@ def create_submission(preds, sizes, test_ids, folder, resize=False):
     if resize:
         preds_test_upsampled = []
         for i, pred in enumerate(preds):
-            pred = F.tensor_to_img(pred)
+            pred = image2np(pred)
             preds_test_upsampled.append(cv2.resize(
                                         pred, (sizes[i, 0], sizes[i, 1])))
     else:
-        preds_test_upsampled = [F.tensor_to_img(pred) for pred in preds]
+        preds_test_upsampled = [image2np(pred) for pred in preds]
     new_test_ids = []
     rles = []
     for n, id_ in enumerate(tqdm(test_ids)):

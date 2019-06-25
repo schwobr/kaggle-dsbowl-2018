@@ -33,12 +33,11 @@ def predict_TTA_all(learner, sizes, size=512, overlap=64,
     preds = []
     k = 0
     with torch.no_grad():
-        for X_test in tqdm(learner.data.test_dl):
+        for X_test, _ in tqdm(learner.data.test_dl):
             for tens in X_test:
                 s = sizes[k]
                 crops, pos, overlaps = get_crops(
-                    tens.cpu()[0, :, :s[0],
-                               :s[1]],
+                    tens.cpu()[:, :s[0], :s[1]],
                     size, overlap, out_channels=out_channels)
                 pred = torch.zeros((1, out_channels, *s))
                 for crop, ((x_min, y_min), (x_max, y_max)) in zip(crops, pos):
@@ -49,7 +48,7 @@ def predict_TTA_all(learner, sizes, size=512, overlap=64,
                     pred[..., x_min:x_max, y_min:y_max] += res[
                          ..., :x_max-x_min, :y_max-y_min]
                 pred /= overlaps
-                preds.append(pred)
+                preds.append(pred.squeeze(0))
                 k += 1
     return preds
 

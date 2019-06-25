@@ -98,7 +98,7 @@ def get_affine(degrees, scale_ranges, shears):
 def load_data(
         path, size=256, bs=8, val_split=0.2, use_augs=True, erosion=True,
         normalize=None, classes=['nucl'],
-        testpath=None, max_size=None):
+        testpath=None, max_size=1388, tfms=True):
     if use_augs:
         def filter_func(fn): return fn.parent.name == 'images'
     else:
@@ -112,16 +112,21 @@ def load_data(
         split_by_rand_pct(valid_pct=val_split).
         label_from_func(
             lambda x: x.parents[1] / 'masks', label_cls=MultiMasksList,
-            classes=classes, erosion=erosion).transform(
-            (rand_pad(0, size), rand_pad(0, size)), tfm_y=True))
+            classes=classes, erosion=erosion))
 
-    if testpath:
-        test_list = TestImageList.from_folder(testpath, extensions=['.png'])
-        if max_size:
-            test_list.max_size = max_size
-        train_list.add_test(test_list)
+    if tfms:
+        train_list.transform(
+            (rand_pad(0, size), rand_pad(0, size)), tfm_y=True)
 
     train_list = train_list.databunch(bs=bs, num_workers=0)
+
+    if testpath:
+        test_list = CellImageList.from_folder(
+            testpath, extensions=['.png'],
+            max_size=max_size)
+        train_list.add_test(test_list)
+        train_list.test_ds.x.max_size = max_size
+
     if normalize:
         train_list = train_list.normalize(
             [torch.tensor(normalize[0]),
@@ -130,10 +135,21 @@ def load_data(
 
 
 class CellImageList(SegmentationItemList):
+    def __init__(self, *args, max_size=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        print(max_size)
+        self.max_size = max_size
+
     def open(self, fn):
         x = super().open(fn).data
         x = image2np(x)
         x = F.to_gray(x)
+        if self.max_size:
+            pad_width = (
+                (0, self.max_size - x.shape[0]),
+                (0, self.max_size - x.shape[1]),
+                (0, 0))
+            x = F.pad(x, pad_width)
         return Image(pil2tensor(x, np.float32))
 
 
@@ -168,6 +184,7 @@ class TestImageList(CellImageList):
     def __init__(self, *args, max_size=1388, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_size = max_size
+        self.label_cls = None
 
     def open(self, fn):
         x = super().open(fn).data
